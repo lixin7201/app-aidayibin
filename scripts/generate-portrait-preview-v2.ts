@@ -1,0 +1,334 @@
+import { config as loadEnv } from "dotenv";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+loadEnv({ path: ".env.local" });
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const projectRoot = join(__dirname, "..");
+const outputDir = join(projectRoot, "public", "templates", "preview-v2");
+
+const baseUrl = process.env.APIMART_BASE_URL ?? "https://api.apimart.ai";
+const apiKey = process.env.APIMART_API_KEY;
+
+type PreviewPrompt = {
+  slug: string;
+  title: string;
+  prompt: string;
+};
+
+const sharedRealismRules = [
+  "整体必须是高端真实摄影，不要 AI 感，不要插画，不要 3D，不要塑料皮，不要网红过度磨皮。",
+  "人物必须是年轻成年中国人，五官漂亮或帅气，气质高级，但不能像明星本人，也不要复制任何真实名人。",
+  "皮肤保留真实毛孔、细微纹理、自然不对称；头发有真实发丝和碎发；服装有真实布料褶皱和材质反光。",
+  "光线必须像真实摄影棚或真实外景拍摄，阴影柔和可信，色彩丰富但不过饱和。",
+  "画面无文字、无 logo、无水印、无 UI、无多余人物、无宠物、无畸形手指。",
+].join("\n");
+
+const negativePrompt = [
+  "AI感",
+  "塑料皮",
+  "蜡像脸",
+  "过度磨皮",
+  "假脸",
+  "脸部不对称崩坏",
+  "五官变形",
+  "手指畸形",
+  "多余手指",
+  "肢体扭曲",
+  "廉价影楼风",
+  "假背景",
+  "CGI",
+  "3D render",
+  "anime",
+  "cartoon",
+  "illustration",
+  "赛博朋克",
+  "未来机甲",
+  "盔甲",
+  "文字",
+  "水印",
+  "logo",
+  "低清晰度",
+  "模糊",
+].join(", ");
+
+const prompts: PreviewPrompt[] = [
+  {
+    slug: "female-sweet-cool-idol-collage",
+    title: "女款 01｜甜酷女团棚拍",
+    prompt: [
+      "生成一张 3:4 竖版四宫格时尚写真拼图，2×2 排列，四张画面必须是同一位年轻成年中国女性，同一套造型、同一场景、同一色调，像真实女团杂志大片，不是 AI 图。",
+      "",
+      "【人物】20-26 岁，高颜值但真实自然，清冷甜酷并存；脸小、五官精致、大眼感但不要夸张；肩颈线条好，身形纤细修长，气质像高级女团画报。",
+      "【妆发】黑色低盘发或贴头盘发，侧分刘海，少量碎发自然贴面，浅粉色发夹；底妆干净细腻但保留真实皮肤纹理，眼妆干净拉长，睫毛纤长，粉色腮红集中在两颊和鼻梁，镜面水光蜜桃粉唇。",
+      "【服装】黑色抹胸连衣裙，裙身有精致粉色蝴蝶结点缀；细带颈饰或黑粉系带；小巧闪亮耳坠；多枚甜酷戒指叠戴；黑色半透长袜，粉色玛丽珍高跟鞋。",
+      "【场景】粉紫渐变摄影棚背景，黑色皮质沙发，浅色干净地面；沙发皮革有真实褶皱和柔亮反光。",
+      "【四宫格分镜】左上：近景特写，双手轻托脸颊，眼神微微向左，突出戒指、腮红和眼妆；右上：七分到全身，跪坐在黑色沙发上，双臂向两侧撑住靠背，姿态有压迫感；左下：全身坐姿，微侧身，一条腿交叠或自然伸出，手掌撑在沙发与地面形成漂亮线条；右下：侧脸近景，回眸看镜头，手臂环抱或搭在肩前，露出肩背高光、耳饰和发夹细节。",
+      "【摄影】柔光棚拍，真实相机质感，对焦在眼睛和妆容配饰，背景轻微虚化；粉紫背景 + 黑色服装沙发 + 粉色点缀，甜酷、梦幻、时尚杂志感。",
+      sharedRealismRules,
+    ].join("\n"),
+  },
+  {
+    slug: "female-colorful-city-editorial-collage",
+    title: "女款 02｜彩色城市时装大片",
+    prompt: [
+      "生成一张 3:4 竖版四宫格时尚写真拼图，2×2 排列，四张画面必须是同一位年轻成年中国女性，同一主题同一人物，真实街拍时装大片质感，不要 AI 感。",
+      "",
+      "【人物】22-28 岁，漂亮、时髦、松弛但有气场；眼神克制自信，身材比例修长，脸部真实自然，不要网红假脸。",
+      "【妆发】深棕或黑色长发，微湿感大波浪或自然披发，发丝有真实层次；清透底妆，轻微雀斑或真实皮肤纹理可见；玫瑰豆沙唇，干净上扬眼线，脸颊自然暖色腮红。",
+      "【服装】彩色高级时装混搭：湖蓝短款皮夹克或亮面夹克，白色修身背心，高腰深色阔腿裤或长裙，银色细项链，精致耳环，小号亮色手包；服装必须真实可穿、材质清晰。",
+      "【场景】傍晚城市街角或艺术街区，玻璃橱窗、霓虹招牌虚化、彩色街灯、干净湿润路面反光；颜色丰富但真实，青蓝、玫红、暖橙光交织。",
+      "【四宫格分镜】左上：脸部近景，人物靠近玻璃橱窗，眼睛看镜头，城市灯光在背景虚化；右上：全身站姿，单手拿包，身体轻微侧转，展示长腿比例和完整穿搭；左下：七分街拍，边走边回头，外套随步伐自然摆动；右下：半身坐姿，靠在街边高脚凳或台阶，手肘自然支撑，表情清冷。",
+      "【摄影】真实 35mm/50mm 时装街拍，浅景深，真实环境光，不要假影棚背景；像专业摄影师为时尚杂志拍摄的城市夜色大片。",
+      sharedRealismRules,
+    ].join("\n"),
+  },
+  {
+    slug: "male-boygroup-black-red-collage",
+    title: "男款 01｜黑红男团棚拍",
+    prompt: [
+      "生成一张 3:4 竖版四宫格男团时尚写真拼图，2×2 排列，四张画面必须是同一位年轻成年中国男性，同一套造型、同一场景、同一色调，像真实男团杂志大片，不是 AI 图。",
+      "",
+      "【人物】20-28 岁，帅气、清爽、少年感和冷感并存；脸型利落，眉眼深邃但真实，鼻梁清晰，下颌线干净；身形高挑修长，肩背线条好，不油腻不成熟大叔感。",
+      "【妆发】黑色短发或微分碎发，发丝自然有层次，微湿感但不过度；底妆干净自然，保留真实皮肤纹理；眉毛清晰，眼神冷静克制，唇色自然。",
+      "【服装】黑色短款西装夹克或皮质短夹克，内搭白色背心或黑色无袖内搭，高腰黑色长裤，细银项链、戒指和耳钉，点缀暗红色领巾或暗红手套；整体高级、年轻、男团舞台下的真实棚拍感。",
+      "【场景】深灰摄影棚，暗红色丝绒沙发或金属椅，局部红色背景光，地面有轻微反光；环境干净有质感。",
+      "【四宫格分镜】左上：脸部近景，手背轻触下颌或整理戒指，眼神看镜头，突出眉眼和下颌线；右上：七分站姿，单手插兜，身体微侧，肩线清楚；左下：全身坐姿，坐在暗红沙发边缘，一条腿自然前伸，展示完整穿搭和比例；右下：半身侧身回眸，夹克微敞，颈部饰品和发丝细节清晰。",
+      "【摄影】高级棚拍柔光 + 轻微硬光轮廓，真实相机质感，黑、白、暗红为主色，皮革、金属、丝绒材质都要真实；像男团杂志封面内页，不要舞台特效。",
+      sharedRealismRules,
+    ].join("\n"),
+  },
+  {
+    slug: "male-colorful-urban-fashion-collage",
+    title: "男款 02｜彩色都市型男街拍",
+    prompt: [
+      "生成一张 3:4 竖版四宫格都市型男写真拼图，2×2 排列，四张画面必须是同一位年轻成年中国男性，同一主题同一人物，真实时尚街拍摄影，不要 AI 感。",
+      "",
+      "【人物】22-30 岁，帅气、干净、有松弛感；不是中年男性，不要油腻；五官立体但真实，眼神自信，身材高挑，姿态自然。",
+      "【妆发】黑色自然短发或中分微卷，发丝清楚；自然男士妆感，皮肤真实清爽，有细节纹理，不能磨成塑料。",
+      "【服装】浅米色长风衣或短款廓形夹克，内搭白色针织或黑色高领，深色宽松长裤，干净皮鞋或时装运动鞋，银色腕表或细项链；造型年轻、时髦、现实可穿。",
+      "【场景】现代城市街区、玻璃幕墙、彩色广告灯箱、雨后路面反光，背景有青蓝和暖橙街灯虚化；画面色彩丰富真实，有电影街拍感。",
+      "【四宫格分镜】左上：脸部近景，人物站在玻璃墙旁，眼睛看向镜头，背景灯光虚化；右上：全身步行，风衣或夹克被风轻轻带起，展示完整穿搭比例；左下：七分坐姿，坐在街边长椅或台阶上，手腕自然搭在膝盖，姿态松弛；右下：半身回头，身体侧转，肩线和轮廓光清楚。",
+      "【摄影】真实 35mm 街拍 + 时装大片质感，浅景深，皮肤和布料质感清楚，雨后城市反光真实，不要赛博朋克，不要未来机甲，不要过度特效。",
+      sharedRealismRules,
+    ].join("\n"),
+  },
+];
+
+async function main() {
+  if (!apiKey) {
+    throw new Error("缺少 APIMART_API_KEY，请先在 .env.local 填好服务商 Key。");
+  }
+
+  await mkdir(outputDir, { recursive: true });
+
+  for (const prompt of prompts) {
+    const outputPath = join(outputDir, `${prompt.slug}.png`);
+    console.log(`Submitting ${prompt.title}...`);
+    const taskId = await submitImage(prompt.prompt);
+    console.log(`${prompt.title}: task ${taskId}`);
+    const imageUrl = await waitForResult(taskId, prompt.title);
+    await downloadImage(imageUrl, outputPath);
+    console.log(`Saved ${outputPath}`);
+  }
+
+  await writePromptDoc();
+}
+
+async function submitImage(prompt: string) {
+  const response = await fetch(`${baseUrl}/v1/images/generations`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-image-2",
+      prompt,
+      negative_prompt: negativePrompt,
+      size: "3:4",
+      resolution: "2k",
+      n: 1,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`提交失败：${await response.text()}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const firstDataItem = Array.isArray(payload.data)
+    ? ((payload.data[0] ?? {}) as Record<string, unknown>)
+    : ((payload.data ?? {}) as Record<string, unknown>);
+  const taskId =
+    getString(payload, ["task_id", "id"]) ??
+    getString(firstDataItem, ["task_id", "id"]);
+
+  if (!taskId) {
+    throw new Error(`服务商未返回任务 ID：${JSON.stringify(payload)}`);
+  }
+
+  return taskId;
+}
+
+async function waitForResult(taskId: string, label: string) {
+  const startedAt = Date.now();
+  const timeoutMs = 20 * 60 * 1000;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    await sleep(6000);
+    const response = await fetch(`${baseUrl}/v1/tasks/${taskId}`, {
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`查询失败：${await response.text()}`);
+    }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const data = (payload.data ?? payload) as Record<string, unknown>;
+    const status = (
+      getString(payload, ["status", "state"]) ??
+      getString(data, ["status", "state"]) ??
+      ""
+    ).toLowerCase();
+    const result = (data.result ?? {}) as Record<string, unknown>;
+    const imageUrl =
+      getString(data, ["image_url", "url", "result_url", "output_url"]) ??
+      findFirstImageUrl(data.output) ??
+      findFirstImageUrl(data.images) ??
+      findFirstImageUrl(result.images) ??
+      findFirstImageUrl(result.output);
+
+    if (["success", "succeeded", "completed", "done"].includes(status) && imageUrl) {
+      return imageUrl;
+    }
+
+    if (["failed", "failure", "error"].includes(status)) {
+      throw new Error(`${label} 生成失败：${JSON.stringify(payload)}`);
+    }
+
+    console.log(`${label}: still ${status || "processing"}...`);
+  }
+
+  throw new Error(`${label} 等待超时：${taskId}`);
+}
+
+async function downloadImage(imageUrl: string, outputPath: string) {
+  const response = await fetch(imageUrl);
+
+  if (!response.ok) {
+    throw new Error(`下载图片失败：${response.status} ${response.statusText}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(outputPath, buffer);
+}
+
+async function writePromptDoc() {
+  const content = [
+    "# 个人展示面 v2 预览提示词",
+    "",
+    "> 这 4 张用于先看风格，不会覆盖正式 12 张模板。",
+    "",
+    "## 生成参数",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        model: "gpt-image-2",
+        size: "3:4",
+        resolution: "2k",
+        n: 1,
+      },
+      null,
+      2,
+    ),
+    "```",
+    "",
+    "## 负向提示词",
+    "",
+    "```text",
+    negativePrompt,
+    "```",
+    "",
+    ...prompts.flatMap((item, index) => [
+      `## ${index + 1}. ${item.title}`,
+      "",
+      `输出文件：\`public/templates/preview-v2/${item.slug}.png\``,
+      "",
+      "```text",
+      item.prompt,
+      "```",
+      "",
+    ]),
+  ].join("\n");
+
+  await writeFile(join(projectRoot, "docs", "portrait-preview-v2-prompts.md"), content);
+}
+
+function getString(object: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = object[key];
+
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function findFirstImageUrl(value: unknown): string | undefined {
+  if (typeof value === "string" && value.startsWith("http")) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const imageUrl = findFirstImageUrl(item);
+
+      if (imageUrl) {
+        return imageUrl;
+      }
+    }
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const directUrl = getString(record, [
+      "url",
+      "image_url",
+      "result_url",
+      "output_url",
+      "public_url",
+    ]);
+
+    if (directUrl) {
+      return directUrl;
+    }
+
+    for (const nestedValue of Object.values(record)) {
+      const nestedUrl = findFirstImageUrl(nestedValue);
+
+      if (nestedUrl) {
+        return nestedUrl;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>QFH5 getUserInfo 检测</title>
+  <style>
+    body { margin: 0; background: #f8f3ea; color: #202624; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    main { min-height: 100vh; padding: 28px 18px; box-sizing: border-box; display: flex; align-items: center; }
+    section { width: 100%; max-width: 720px; margin: 0 auto; background: #fff; border-radius: 28px; padding: 28px 24px; box-shadow: 0 18px 50px rgba(102,76,160,.12); }
+    .eyebrow { color: #8a7cc0; font-weight: 800; letter-spacing: .2em; font-size: 14px; }
+    h1 { margin: 18px 0 24px; font-size: 34px; line-height: 1.1; }
+    .box { border-radius: 20px; padding: 18px; margin-top: 16px; background: #f2ecff; }
+    .result { background: #f9f5ec; }
+    .help { background: #fbfaff; }
+    .label { margin: 0 0 10px; font-weight: 900; }
+    #status { color: #745ce0; }
+    #message { color: #747083; line-height: 1.7; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: #746f86; font-size: 13px; line-height: 1.6; }
+    p { margin: 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <p class="eyebrow">APP WEBVIEW 测试页</p>
+      <h1>QFH5.getUserInfo 检测</h1>
+      <div class="box">
+        <p class="label">当前状态：<span id="status">准备检测</span></p>
+        <p id="message">页面已打开，正在等待 App 注入...</p>
+      </div>
+      <div class="box result">
+        <p class="label">返回内容</p>
+        <pre id="result">等待中</pre>
+      </div>
+      <div class="box help">
+        <p class="label">怎么看结果：</p>
+        <p id="help">如果显示“成功”，说明 App 已经把用户信息传给 H5；如果显示“未检测到”，说明 App 没有注入 QFH5.getUserInfo，或者当前不是在 App WebView 里打开。</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    function setText(id, text) {
+      document.getElementById(id).textContent = text;
+    }
+
+    function stringify(value) {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch (error) {
+        return String(value);
+      }
+    }
+
+    function inspect() {
+      var qfh5 = window.QFH5;
+      var getUserInfo = qfh5 && qfh5.getUserInfo;
+
+      setText("result", stringify({
+        href: location.href,
+        userAgent: navigator.userAgent,
+        QFH5Type: typeof qfh5,
+        getUserInfoType: typeof getUserInfo,
+        QFH5Keys: qfh5 ? Object.keys(qfh5) : []
+      }));
+
+      if (typeof getUserInfo !== "function") {
+        setText("status", "未检测到");
+        setText("message", "没有检测到 QFH5.getUserInfo。请确认 App 是否对当前 ngrok 域名注入了登录桥，或者是否需要加入域名白名单。");
+        return;
+      }
+
+      setText("status", "已检测到，正在调用");
+      setText("message", "已找到 QFH5.getUserInfo，正在请求 App 返回当前用户信息。");
+
+      var callbackCalled = false;
+      var callReturnValue;
+
+      try {
+        callReturnValue = getUserInfo(function(state, data) {
+          callbackCalled = true;
+          setText("result", stringify({
+            callbackCalled: true,
+            state: state,
+            data: data,
+            callReturnValue: callReturnValue
+          }));
+          if (String(state) === "1") {
+            setText("status", "成功");
+            setText("message", "App 已成功返回用户信息。这个结果说明 WebView 注入链路是通的。");
+          } else {
+            setText("status", "失败");
+            setText("message", "检测到 QFH5.getUserInfo，但 App 返回未登录或失败。");
+          }
+        });
+
+        setText("result", stringify({
+          callbackCalled: false,
+          callReturnValue: callReturnValue,
+          note: "已经调用 getUserInfo，正在等待 App 执行 callback。"
+        }));
+
+        setTimeout(function() {
+          if (!callbackCalled) {
+            setText("status", "超时未回调");
+            setText("message", "已检测到 QFH5.getUserInfo，也已经调用它，但 8 秒内 App 没有执行 callback 返回用户信息。");
+            setText("result", stringify({
+              callbackCalled: false,
+              callReturnValue: callReturnValue,
+              conclusion: "方法存在，但没有按 callback(1, data) 或 callback(0, error) 的方式返回。"
+            }));
+          }
+        }, 8000);
+      } catch (error) {
+        setText("status", "调用出错");
+        setText("message", "调用 QFH5.getUserInfo 时发生错误。");
+        setText("result", stringify({ error: error && error.message ? error.message : String(error) }));
+      }
+    }
+
+    setText("status", "检测中");
+    setText("message", "正在检测 App 是否注入 QFH5.getUserInfo...");
+    setTimeout(inspect, 300);
+    setTimeout(function() {
+      if (document.getElementById("status").textContent === "检测中") {
+        inspect();
+      }
+    }, 1500);
+  </script>
+</body>
+</html>
