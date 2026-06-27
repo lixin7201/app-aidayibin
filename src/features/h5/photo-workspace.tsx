@@ -8,8 +8,8 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  Share2,
   Trash2,
-  Upload,
 } from "lucide-react";
 import NextImage from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,10 +21,18 @@ import type {
   GenerationTask,
   ImageRatio,
 } from "@/features/generation/types";
+import { SaveImageOverlay } from "@/components/save-image-overlay";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { apiPath, assetPath } from "@/lib/routes";
+import {
+  saveImageToPhone,
+  shareImage,
+  withPreviewImageAccess,
+  type SaveImageState,
+} from "@/lib/qfh5-actions";
 import { createClientId } from "@/lib/utils/client-id";
 import { cn } from "@/lib/utils/cn";
+import { compressImageForUpload } from "@/lib/utils/image-compression";
 import type { PublicPhotoTemplate } from "@/features/templates/types";
 
 type QuotaSnapshot = {
@@ -76,6 +84,7 @@ const genderLabels: Record<GenderOption, string> = {
 const visibleGenderOptions: GenderOption[] = ["female", "male"];
 const templatePreviewPriorityCount = 6;
 const templateTapMoveThreshold = 10;
+const appVisibleEventName = "aidayibin:app-visible";
 
 export function PhotoWorkspace({
   templates,
@@ -116,50 +125,25 @@ export function PhotoWorkspace({
     (task) => task.status === "pending" || task.status === "processing",
   );
   const hasRunningTask = Boolean(runningTask) || currentQuota.hasRunningTask;
+  const quotaLabel = currentQuota.isUnlimited
+    ? "今日不限 / 累计不限"
+    : `今日剩 ${currentQuota.dailyRemaining} 张 / 累计剩 ${currentQuota.campaignRemaining} 张`;
 
-  useEffect(() => {
-    photosRef.current = photos;
-  }, [photos]);
-
-  useEffect(
-    () => () => {
-      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      void refreshData({ includeGenerations: historyVisible });
-    }, 12000);
-
-    return () => clearInterval(timer);
-  }, [historyVisible]);
-
-  useEffect(() => {
-    function handleAuthReady(event: Event) {
-      const detail = (event as CustomEvent<CurrentUserProfile>).detail;
-
-      if (detail) {
-        setProfile(detail);
-      }
-
-      void refreshData({ includeGenerations: historyVisible });
-    }
-
-    window.addEventListener("aidayibin:auth-ready", handleAuthReady);
-
-    return () =>
-      window.removeEventListener("aidayibin:auth-ready", handleAuthReady);
-  }, [historyVisible]);
-
-  async function refreshData(options: { includeGenerations?: boolean } = {}) {
+  async function refreshQuota() {
     const quotaResponse = await fetch(apiPath("/quota")).catch(() => null);
 
-    if (quotaResponse?.ok) {
-      const quotaPayload = (await quotaResponse.json()) as { quota: QuotaSnapshot };
-      setQuota(quotaPayload.quota);
+    if (!quotaResponse?.ok) {
+      return null;
     }
+
+    const quotaPayload = (await quotaResponse.json()) as { quota: QuotaSnapshot };
+    setQuota(quotaPayload.quota);
+
+    return quotaPayload.quota;
+  }
+
+  async function refreshData(options: { includeGenerations?: boolean } = {}) {
+    await refreshQuota();
 
     if (!options.includeGenerations) {
       return;
@@ -177,6 +161,76 @@ export function PhotoWorkspace({
     }
   }
 
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
+  useEffect(
+    () => () => {
+      photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void refreshData({ includeGenerations: historyVisible });
+    }, hasRunningTask ? 5000 : 15000);
+
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyVisible, hasRunningTask]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshData({ includeGenerations: true });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    generations
+      .filter((task) => task.status === "succeeded" && task.storedImageUrl)
+      .slice(0, 6)
+      .forEach((task) => {
+        const preview = new Image();
+        preview.src =
+          task.previewImageUrl ??
+          withPreviewImageAccess(apiPath(`/generations/${task.id}/image`));
+      });
+  }, [generations]);
+
+  useEffect(() => {
+    function handleAuthReady(event: Event) {
+      const detail = (event as CustomEvent<CurrentUserProfile>).detail;
+
+      if (detail) {
+        setProfile(detail);
+      }
+
+      void refreshData({ includeGenerations: historyVisible });
+    }
+
+    window.addEventListener("aidayibin:auth-ready", handleAuthReady);
+
+    return () =>
+      window.removeEventListener("aidayibin:auth-ready", handleAuthReady);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyVisible]);
+
+  useEffect(() => {
+    function handleAppVisible() {
+      void refreshData({ includeGenerations: historyVisible });
+    }
+
+    window.addEventListener(appVisibleEventName, handleAppVisible);
+
+    return () => window.removeEventListener(appVisibleEventName, handleAppVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyVisible]);
+
   async function showHistory() {
     setHistoryVisible(true);
     await refreshData({ includeGenerations: true });
@@ -192,7 +246,7 @@ export function PhotoWorkspace({
     const nextPhotos = [...photos];
 
     for (const file of selectedFiles) {
-      const compressed = await compressImage(file);
+      const compressed = await compressImageForUpload(file);
       nextPhotos.push({
         id: createClientId("portrait-photo"),
         file: compressed,
@@ -282,26 +336,35 @@ export function PhotoWorkspace({
       setNotice("请先上传 1 张清晰单人照片。");
       return;
     }
-    if (!currentQuota.isUnlimited && hasRunningTask) {
+
+    const latestQuota = (await refreshQuota()) ?? currentQuota;
+    const latestHasRunningTask =
+      Boolean(runningTask) || latestQuota.hasRunningTask;
+
+    if (!latestQuota.isUnlimited && !profile && latestQuota.dailyRemaining <= 0) {
+      setNotice("正在同步登录信息，请稍后再试。");
+      return;
+    }
+    if (!latestQuota.isUnlimited && latestHasRunningTask) {
       setNotice("你已有一张图片正在生成，请稍后查看。");
       return;
     }
-    if (!currentQuota.isUnlimited && currentQuota.dailyRemaining <= 0) {
+    if (!latestQuota.isUnlimited && latestQuota.dailyRemaining <= 0) {
       setNotice("今天的 2 张写真体验次数已用完，明天再来试试。");
       return;
     }
-    if (!currentQuota.isUnlimited && currentQuota.campaignRemaining <= 0) {
+    if (!latestQuota.isUnlimited && latestQuota.campaignRemaining <= 0) {
       setNotice("累计 10 张写真体验次数已用完。");
       return;
     }
     if (
-      !currentQuota.isUnlimited &&
-      currentQuota.dailySubmitCount >= currentQuota.dailySubmitLimit
+      !latestQuota.isUnlimited &&
+      latestQuota.dailySubmitCount >= latestQuota.dailySubmitLimit
     ) {
       setNotice("今天提交次数较多，请明天再来试试。");
       return;
     }
-    if (!currentQuota.isUnlimited && currentQuota.platformDailyRemaining <= 0) {
+    if (!latestQuota.isUnlimited && latestQuota.platformDailyRemaining <= 0) {
       setNotice("今日体验名额已满，请明天再来试试。");
       return;
     }
@@ -324,14 +387,17 @@ export function PhotoWorkspace({
       });
 
       if (!response.ok) {
-        throw new Error("提交失败");
+        const payload = (await response.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(payload?.error?.message ?? "提交失败");
       }
 
       clearPhotos();
       setNotice("提交成功，图片正在生成中。");
       await refreshData({ includeGenerations: historyVisible });
-    } catch {
-      setNotice("提交失败，请稍后再试。");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "提交失败，请稍后再试。");
     } finally {
       setIsSubmitting(false);
     }
@@ -352,6 +418,10 @@ export function PhotoWorkspace({
             <h1 className="mt-2 text-3xl font-black tracking-tight sm:mt-3 sm:text-5xl">
               AI 写真
             </h1>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#8d6bff]/28 bg-[#8d6bff]/12 px-3 py-1.5 text-sm font-black text-[#6f4dff]">
+              <Camera size={15} />
+              {quotaLabel}
+            </div>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)] sm:mt-4 sm:text-base sm:leading-7">
               上传 1-4 张清晰单人照即可体验，每日最多生成 2 张，累计生成 10 张。
             </p>
@@ -378,12 +448,7 @@ export function PhotoWorkspace({
             </section>
 
             <section className="rounded-[36px] border border-[var(--border)] bg-[var(--surface-strong)]/82 p-5 shadow-[0_24px_70px_rgba(102,76,160,0.12)] backdrop-blur-xl">
-              <SectionTitle
-                icon={<Upload size={18} />}
-                title="上传照片"
-                subtitle="选择 1-4 张清晰单人照"
-              />
-              <div className="mt-4">
+              <div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm font-black text-[var(--foreground)]">模板选择</p>
                   <div className="flex rounded-2xl bg-[var(--chip-surface)] p-1">
@@ -558,6 +623,7 @@ export function PhotoWorkspace({
                         <GenerationCard
                           key={task.id}
                           task={task}
+                          priority={generations.indexOf(task) < 4}
                           onDeleted={() =>
                             void refreshData({ includeGenerations: true })
                           }
@@ -579,7 +645,26 @@ export function PhotoWorkspace({
   );
 }
 
-function UserPill({ currentUser }: { currentUser: CurrentUserProfile | null }) {
+function UserPill({
+  currentUser,
+  state,
+}: {
+  currentUser: CurrentUserProfile | null;
+  state?: "loading" | "authenticated" | "anonymous";
+}) {
+  const authState = state ?? (currentUser ? "authenticated" : "anonymous");
+
+  if (authState === "anonymous") {
+    return (
+      <div
+        className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-strong)]/86 px-3 text-xs font-bold text-[var(--muted)] shadow-sm backdrop-blur"
+        title="登录后体验"
+      >
+        登录后体验
+      </div>
+    );
+  }
+
   const nickname = currentUser?.nickname || "大宜宾用户";
   const fallbackText = nickname.trim().slice(0, 1) || "大";
 
@@ -609,43 +694,125 @@ function UserPill({ currentUser }: { currentUser: CurrentUserProfile | null }) {
 
 function GenerationCard({
   task,
+  priority,
   onDeleted,
 }: {
   task: GenerationTask;
+  priority: boolean;
   onDeleted: () => void;
 }) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [saveStage, setSaveStage] = useState<SaveImageState | null>(null);
   const isDone = task.status === "succeeded" && Boolean(task.storedImageUrl);
   const isProcessing = task.status === "pending" || task.status === "processing";
-  const imageUrl = apiPath(`/generations/${task.id}/image`);
+  const previewUrl =
+    task.previewImageUrl ??
+    withPreviewImageAccess(apiPath(`/generations/${task.id}/image`));
+
+  async function share() {
+    if (!task.sharePageUrl || !task.publicImageUrl || isSharing) return;
+    setIsSharing(true);
+    try {
+      const sharePageUrl = task.sharePageUrl;
+      const shareImageUrl =
+        task.thumbImageUrl ?? task.cardImageUrl ?? task.publicImageUrl;
+
+      await shareImage({
+        title: "我在大宜宾生成了一张 AI 写真",
+        description: "点击查看同款 AI 写真效果",
+        imageUrl: shareImageUrl,
+        pageUrl: sharePageUrl,
+      });
+    } finally {
+      setIsSharing(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!task.publicImageUrl) return;
+    setIsSaving(true);
+    setSaveStage(null);
+
+    try {
+      const result = await saveImageToPhone({
+        url: task.publicImageUrl,
+        previewUrl,
+        originalUrl: task.originalImageUrl ?? undefined,
+        onStateChange: (state) => setSaveStage(state),
+      });
+      if (result.error !== "app_required") {
+        setSaveStage(null);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
-    <article className="group overflow-hidden rounded-[24px] border border-[var(--soft-border)] bg-[var(--surface-strong)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
-      <div className="relative aspect-[3/4] bg-[var(--chip-surface)]">
-        {isDone ? (
-          <NextImage src={imageUrl} alt={task.templateName} fill className="object-cover" sizes="220px" unoptimized />
-        ) : (
-          <div className="flex h-full items-center justify-center text-[var(--muted)]">
-            {isProcessing ? "生成中" : task.status === "failed" ? "失败" : "等待中"}
-          </div>
-        )}
-      </div>
-      <div className="p-3">
-        <p className="text-xs font-bold text-[var(--muted)]">{task.templateName}</p>
-        <p className="mt-1 text-sm font-black text-[var(--foreground)]">
-          {task.ratio} · {task.resolution}
-        </p>
-        <div className="mt-3 flex gap-2">
+    <>
+      <article className="group overflow-hidden rounded-[24px] border border-[var(--soft-border)] bg-[var(--surface-strong)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
+        <div className="relative aspect-[3/4] bg-[var(--chip-surface)]">
           {isDone ? (
-            <a className="inline-flex h-8 items-center gap-1 rounded-xl bg-[var(--action-surface)] px-3 text-xs font-black text-[var(--primary)]" href={imageUrl} target="_blank" rel="noreferrer">
-              <Download size={12} /> 查看
-            </a>
-          ) : null}
-          <button type="button" className="inline-flex h-8 items-center gap-1 rounded-xl bg-[var(--panel-surface)] px-3 text-xs font-black text-[var(--muted)]" onClick={onDeleted}>
-            <RefreshCw size={12} /> 刷新
-          </button>
+            <NextImage
+              src={previewUrl}
+              alt={task.templateName}
+              fill
+              className="object-cover"
+              sizes="220px"
+              unoptimized
+              priority={priority}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-[var(--muted)]">
+              {isProcessing ? "生成中" : task.status === "failed" ? "失败" : "等待中"}
+            </div>
+          )}
         </div>
-      </div>
-    </article>
+        <div className="p-3">
+          <p className="text-xs font-bold text-[var(--muted)]">{task.templateName}</p>
+          <p className="mt-1 text-sm font-black text-[var(--foreground)]">
+            {task.ratio} · {task.resolution}
+          </p>
+          <div className="mt-3 flex gap-2">
+            {isDone ? (
+              <>
+                <button
+                  type="button"
+                  className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--action-surface)] px-2 text-xs font-black text-[var(--primary)] disabled:opacity-70"
+                  disabled={isSaving}
+                  onClick={() => void handleSave()}
+                >
+                  <Download size={12} className={cn(isSaving && "animate-pulse")} />
+                  {isSaving ? "保存中" : "保存"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--panel-surface)] px-2 text-xs font-black text-[var(--muted)] disabled:opacity-40"
+                  disabled={isSharing}
+                  onClick={() => void share()}
+                >
+                  {isSharing ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Share2 size={12} />
+                  )}
+                  {isSharing ? "分享中" : "分享"}
+                </button>
+              </>
+            ) : null}
+            <button type="button" className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--panel-surface)] px-2 text-xs font-black text-[var(--muted)]" onClick={onDeleted}>
+              <RefreshCw size={12} /> 刷新
+            </button>
+          </div>
+        </div>
+      </article>
+      <SaveImageOverlay
+        state={saveStage}
+        onClose={() => setSaveStage(null)}
+        onRetry={() => void handleSave()}
+      />
+    </>
   );
 }
 
@@ -699,39 +866,4 @@ async function uploadPhotos(photos: UploadedPhoto[]) {
   }
 
   return urls;
-}
-
-async function compressImage(file: File) {
-  if (file.size <= 2.5 * 1024 * 1024) {
-    return file;
-  }
-
-  try {
-    const image = await createImageBitmap(file);
-    const maxSide = 1600;
-    const scale = Math.min(maxSide / image.width, maxSide / image.height, 1);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(image.width * scale);
-    canvas.height = Math.round(image.height * scale);
-    const context = canvas.getContext("2d");
-
-    if (!context) {
-      return file;
-    }
-
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.86),
-    );
-
-    if (!blob) {
-      return file;
-    }
-
-    return new File([blob], file.name.replace(/\.\w+$/, ".jpg"), {
-      type: "image/jpeg",
-    });
-  } catch {
-    return file;
-  }
 }

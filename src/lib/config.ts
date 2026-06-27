@@ -17,22 +17,43 @@ const envSchema = z.object({
   NEXT_PUBLIC_ENABLE_MOCKS: z
     .string()
     .optional()
-    .transform((value) => value !== "false"),
-  SUPABASE_URL: optionalUrl,
-  SUPABASE_SERVICE_ROLE_KEY: optionalString,
+    .transform((value) => value === "true"),
   APIMART_API_KEY: optionalString,
   APIMART_BASE_URL: z
     .string()
     .url()
     .default("https://api.apimart.ai"),
+  IMAGE_STORAGE_PROVIDER: z
+    .enum(["r2", "aliyun_oss", "local"])
+    .default("r2"),
   CLOUDFLARE_R2_ACCOUNT_ID: optionalString,
   CLOUDFLARE_R2_ACCESS_KEY_ID: optionalString,
   CLOUDFLARE_R2_SECRET_ACCESS_KEY: optionalString,
   CLOUDFLARE_R2_BUCKET: optionalString,
   CLOUDFLARE_R2_PUBLIC_BASE_URL: optionalUrl,
+  ALIYUN_OSS_REGION: optionalString,
+  ALIYUN_OSS_ENDPOINT: optionalUrl,
+  ALIYUN_OSS_BUCKET: optionalString,
+  ALIYUN_OSS_ACCESS_KEY_ID: optionalString,
+  ALIYUN_OSS_ACCESS_KEY_SECRET: optionalString,
+  ALIYUN_OSS_PUBLIC_BASE_URL: optionalUrl,
+  LOCAL_IMAGE_STORAGE_DIR: optionalString,
+  LOCAL_IMAGE_PUBLIC_BASE_URL: optionalUrl,
   APP_AUTH_VERIFY_URL: optionalUrl,
   APP_AUTH_SHARED_SECRET: optionalString,
   APP_SESSION_SECRET: optionalString,
+  GAOKAO_LLM_BASE_URL: optionalUrl,
+  GAOKAO_LLM_API_KEY: optionalString,
+  GAOKAO_LLM_MODEL: optionalString,
+  GAOKAO_LLM_REPORT_MODEL: optionalString,
+  WECHAT_APP_ID: optionalString,
+  WECHAT_APP_SECRET: optionalString,
+  WECHAT_OAUTH_REDIRECT_URL: optionalUrl,
+  NEXT_PUBLIC_WECHAT_MINI_PROGRAM_APP_ID: optionalString,
+  NEXT_PUBLIC_WECHAT_MINI_PROGRAM_ORIGINAL_ID: optionalString,
+  NEXT_PUBLIC_WECHAT_MINI_PROGRAM_WEBVIEW_PATH: z
+    .preprocess(emptyStringToUndefined, z.string().optional())
+    .default("/subPack/information/webviewMini"),
   ADMIN_SESSION_PASSWORD: z.string().default("dayibin-admin-dev"),
 });
 

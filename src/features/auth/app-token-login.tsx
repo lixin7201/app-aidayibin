@@ -27,16 +27,34 @@ type QFH5UserInfo = {
 
 type QFH5Bridge = {
   getUserInfo?: (
-    callback: (state: number, data: QFH5UserInfo) => void,
+    callback: (state: number | string, data: QFH5UserInfo) => void,
   ) => void;
   getDeviceId?: (
-    callback: (state: number, data: { deviceid?: string; error?: string }) => void,
+    callback: (
+      state: number | string,
+      data: { deviceid?: string; error?: string },
+    ) => void,
   ) => void;
 };
 
 type WindowWithQFH5 = Window & {
   QFH5?: QFH5Bridge;
 };
+
+const appVisibleEventName = "aidayibin:app-visible";
+const minRefreshIntervalMs = 1000;
+const qfh5BridgeWaitTimeoutMs = 3000;
+const qfh5BridgePollIntervalMs = 150;
+const qfh5CallbackTimeoutMs = 5000;
+const maxNoIdentityRetries = 6;
+
+function isWechatBrowser() {
+  return /MicroMessenger/i.test(navigator.userAgent);
+}
+
+function isBridgeSuccess(state: number | string) {
+  return String(state) === "1";
+}
 
 export function AppTokenLogin() {
   const [debugMessage, setDebugMessage] = useState<string | null>(null);
@@ -45,6 +63,10 @@ export function AppTokenLogin() {
   useEffect(() => {
     const url = new URL(window.location.href);
     let isCancelled = false;
+    let isExchanging = false;
+    let lastRefreshAt = 0;
+    let retryTimer: number | null = null;
+    let noIdentityRetryCount = 0;
     const nextDebugEnabled =
       url.searchParams.get("qfh5_debug") === "1" ||
       url.searchParams.get("mock_qfh5") === "1";
@@ -110,73 +132,190 @@ export function AppTokenLogin() {
       };
     }
 
-    function readIdentityFromQFH5() {
-      return new Promise<AppIdentityPayload | null>((resolve) => {
-        const bridge = windowWithQFH5.QFH5;
+    function waitForQFH5Bridge() {
+      return new Promise<QFH5Bridge | null>((resolve) => {
+        const startedAt = Date.now();
 
-        if (!bridge?.getUserInfo) {
-          if (nextDebugEnabled) {
-            setDebugMessage("未检测到 QFH5.getUserInfo");
+        function checkBridge() {
+          const bridge = windowWithQFH5.QFH5;
+
+          if (bridge?.getUserInfo) {
+            resolve(bridge);
+            return;
           }
-          resolve(null);
-          return;
+
+          if (Date.now() - startedAt >= qfh5BridgeWaitTimeoutMs) {
+            resolve(null);
+            return;
+          }
+
+          window.setTimeout(checkBridge, qfh5BridgePollIntervalMs);
         }
 
-        try {
+        checkBridge();
+      });
+    }
+
+    function scheduleNoIdentityRetry() {
+      if (isCancelled || retryTimer !== null) {
+        return;
+      }
+
+      if (noIdentityRetryCount >= maxNoIdentityRetries) {
+        return;
+      }
+
+      noIdentityRetryCount += 1;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        void exchangeToken({ force: true });
+      }, 1000);
+    }
+
+    function clearNoIdentityRetry() {
+      noIdentityRetryCount = 0;
+
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    }
+
+    async function readIdentityFromQFH5() {
+      return new Promise<AppIdentityPayload | null>((resolve) => {
+        void waitForQFH5Bridge().then((bridge) => {
+          if (!bridge?.getUserInfo) {
+            if (nextDebugEnabled) {
+              setDebugMessage("未检测到 QFH5.getUserInfo");
+            }
+            resolve(null);
+            return;
+          }
+
           if (nextDebugEnabled) {
             setDebugMessage("已检测到 QFH5，正在获取用户信息");
           }
 
-          bridge.getUserInfo((state, data) => {
-            if (state !== 1 || !data) {
-              if (nextDebugEnabled) {
-                setDebugMessage("QFH5 已返回，但用户未登录");
-              }
-              resolve(null);
+          let resolved = false;
+          const finish = (payload: AppIdentityPayload | null) => {
+            if (resolved) {
               return;
             }
 
-            const nextPayload: AppIdentityPayload = {
-              uid: data.uid,
-              username: data.username,
-              face: data.face,
-              deviceid: data.deviceid,
-            };
-
-            if (nextPayload.deviceid || !bridge.getDeviceId) {
-              resolve(nextPayload);
-              return;
+            resolved = true;
+            window.clearTimeout(timer);
+            resolve(payload);
+          };
+          const timer = window.setTimeout(() => {
+            if (nextDebugEnabled) {
+              setDebugMessage("QFH5 获取用户信息超时");
             }
+            finish(null);
+          }, qfh5CallbackTimeoutMs);
 
-            bridge.getDeviceId((deviceState, deviceData) => {
-              if (deviceState === 1 && deviceData?.deviceid) {
-                resolve({ ...nextPayload, deviceid: deviceData.deviceid });
+          try {
+            bridge.getUserInfo((state, data) => {
+              if (!isBridgeSuccess(state) || !data) {
+                if (nextDebugEnabled) {
+                  setDebugMessage("QFH5 已返回，但用户未登录");
+                }
+                finish(null);
                 return;
               }
 
-              resolve(nextPayload);
+              const nextPayload: AppIdentityPayload = {
+                uid: data.uid,
+                username: data.username,
+                face: data.face,
+                deviceid: data.deviceid,
+              };
+
+              if (nextPayload.deviceid || !bridge.getDeviceId) {
+                finish(nextPayload);
+                return;
+              }
+
+              bridge.getDeviceId((deviceState, deviceData) => {
+                if (isBridgeSuccess(deviceState) && deviceData?.deviceid) {
+                  finish({ ...nextPayload, deviceid: deviceData.deviceid });
+                  return;
+                }
+
+                finish(nextPayload);
+              });
             });
-          });
-        } catch {
-          resolve(null);
-        }
+          } catch {
+            finish(null);
+          }
+        });
       });
     }
 
-    async function exchangeToken() {
-      const identityFromUrl = readIdentityFromUrl();
-      const mockIdentity = readMockIdentity();
-      installMockQFH5Bridge(mockIdentity);
-      const identity = identityFromUrl ?? (await readIdentityFromQFH5());
+    async function checkSession(): Promise<boolean> {
+      try {
+        const response = await fetch(apiPath("/auth/check"), {
+          credentials: "include",
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    }
 
-      if (!identity) {
+    function redirectToWechatOAuth() {
+      const returnTo = window.location.pathname + window.location.search;
+      const oauthUrl = apiPath(
+        `/auth/wechat/start?return_to=${encodeURIComponent(returnTo)}`,
+      );
+      window.location.href = oauthUrl;
+    }
+
+    function dispatchAppVisible() {
+      window.dispatchEvent(new CustomEvent(appVisibleEventName));
+    }
+
+    async function exchangeToken(options: { force?: boolean } = {}) {
+      const now = Date.now();
+
+      if (!options.force && now - lastRefreshAt < minRefreshIntervalMs) {
         return;
       }
 
+      if (isExchanging) {
+        return;
+      }
+
+      lastRefreshAt = now;
+      isExchanging = true;
+      const identityFromUrl = readIdentityFromUrl();
+      const mockIdentity = readMockIdentity();
+      installMockQFH5Bridge(mockIdentity);
       try {
+        const identity = identityFromUrl ?? (await readIdentityFromQFH5());
+
+        if (!identity) {
+          // 无 App 身份时，检测微信环境并自动跳转 OAuth
+          const hasSession = await checkSession();
+
+          if (!hasSession && isWechatBrowser()) {
+            redirectToWechatOAuth();
+            return;
+          }
+
+          if (hasSession) {
+            clearNoIdentityRetry();
+            dispatchAppVisible();
+            return;
+          }
+
+          scheduleNoIdentityRetry();
+          return;
+        }
+
         const response = await fetch(apiPath("/auth/exchange"), {
           method: "POST",
           headers: { "content-type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(identity),
         });
 
@@ -196,6 +335,8 @@ export function AppTokenLogin() {
             setDebugMessage("登录成功，H5 已建立会话");
           }
 
+          clearNoIdentityRetry();
+          dispatchAppVisible();
           window.dispatchEvent(
             new CustomEvent("aidayibin:auth-ready", {
               detail: {
@@ -255,13 +396,30 @@ export function AppTokenLogin() {
         if (nextDebugEnabled) {
           setDebugMessage("登录交换异常，请查看控制台");
         }
+      } finally {
+        isExchanging = false;
       }
     }
 
-    void exchangeToken();
+    function handleAppVisible() {
+      if (document.visibilityState && document.visibilityState !== "visible") {
+        return;
+      }
+
+      void exchangeToken();
+    }
+
+    void exchangeToken({ force: true });
+    window.addEventListener("pageshow", handleAppVisible);
+    window.addEventListener("focus", handleAppVisible);
+    document.addEventListener("visibilitychange", handleAppVisible);
 
     return () => {
       isCancelled = true;
+      clearNoIdentityRetry();
+      window.removeEventListener("pageshow", handleAppVisible);
+      window.removeEventListener("focus", handleAppVisible);
+      document.removeEventListener("visibilitychange", handleAppVisible);
     };
   }, []);
 

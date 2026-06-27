@@ -39,6 +39,13 @@ export type GenerationTask = {
   resolution: ResolutionOption;
   inputImageCount: number;
   storedImageUrl: string | null;
+  previewImageUrl: string | null;
+  shareImageUrl: string | null;
+  thumbImageUrl: string | null;
+  publicImageUrl: string | null;
+  cardImageUrl: string | null;
+  originalImageUrl: string | null;
+  sharePageUrl: string | null;
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;

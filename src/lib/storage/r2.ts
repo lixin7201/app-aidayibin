@@ -5,6 +5,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import sharp from "sharp";
 
 import { config, isMockEnabled } from "@/lib/config";
 import { AppError, errorCodes } from "@/lib/http/errors";
@@ -137,7 +138,7 @@ export async function persistRemoteImage(input: {
 
   const body = Buffer.from(await response.arrayBuffer());
   const contentType = response.headers.get("content-type") ?? "image/png";
-  const objectKey = `results/${input.userId}/${input.taskId}.png`;
+  const objectKey = getResultImageObjectKey(input.userId, input.taskId);
 
   await client.send(
     new PutObjectCommand({
@@ -147,6 +148,30 @@ export async function persistRemoteImage(input: {
       ContentType: contentType,
     }),
   );
+
+  await persistResultPreviewImage({
+    userId: input.userId,
+    taskId: input.taskId,
+    source: body,
+  }).catch((error) => {
+    console.warn("Result preview image upload failed", error);
+  });
+
+  await persistResultShareImage({
+    userId: input.userId,
+    taskId: input.taskId,
+    source: body,
+  }).catch((error) => {
+    console.warn("Result share image upload failed", error);
+  });
+
+  persistResultCardImage({
+    userId: input.userId,
+    taskId: input.taskId,
+    source: body,
+  }).catch((error) => {
+    console.warn("Result card image upload failed", error);
+  });
 
   return buildPublicUrl(objectKey);
 }
@@ -161,7 +186,7 @@ export async function getResultImageObject(input: {
     throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
   }
 
-  const objectKey = `results/${input.userId}/${input.taskId}.png`;
+  const objectKey = getResultImageObjectKey(input.userId, input.taskId);
   const output = await client.send(
     new GetObjectCommand({
       Bucket: config.CLOUDFLARE_R2_BUCKET,
@@ -182,6 +207,251 @@ export async function getResultImageObject(input: {
   };
 }
 
+export async function getResultImageBuffer(input: {
+  userId: string;
+  taskId: string;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const objectKey = getResultImageObjectKey(input.userId, input.taskId);
+  const output = await client.send(
+    new GetObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+    }),
+  );
+
+  if (!output.Body) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "成品图不存在", 404);
+  }
+
+  return {
+    buffer: Buffer.from(await output.Body.transformToByteArray()),
+    contentType: output.ContentType ?? "image/png",
+    etag: output.ETag,
+    lastModified: output.LastModified,
+  };
+}
+
+export async function getResultPreviewImageObject(input: {
+  userId: string;
+  taskId: string;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const objectKey = getResultPreviewImageObjectKey(input.userId, input.taskId);
+  const output = await client.send(
+    new GetObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+    }),
+  );
+
+  if (!output.Body) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "预览图不存在", 404);
+  }
+
+  return {
+    body: output.Body.transformToWebStream(),
+    contentLength: output.ContentLength,
+    contentType: output.ContentType ?? "image/webp",
+    etag: output.ETag,
+    lastModified: output.LastModified,
+  };
+}
+
+export async function persistResultPreviewImage(input: {
+  userId: string;
+  taskId: string;
+  source: Buffer;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const preview = await createResultPreviewImageBuffer(input.source);
+  const objectKey = getResultPreviewImageObjectKey(input.userId, input.taskId);
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+      Body: preview,
+      ContentType: "image/webp",
+    }),
+  );
+
+  return {
+    buffer: preview,
+    objectKey,
+    contentLength: preview.byteLength,
+  };
+}
+
+export async function createResultShareImageBuffer(source: Buffer) {
+  return sharp(source)
+    .rotate()
+    .resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 85 })
+    .toBuffer();
+}
+
+export async function persistResultShareImage(input: {
+  userId: string;
+  taskId: string;
+  source: Buffer;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const share = await createResultShareImageBuffer(input.source);
+  const objectKey = getResultShareImageObjectKey(input.userId, input.taskId);
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+      Body: share,
+      ContentType: "image/webp",
+    }),
+  );
+
+  return {
+    buffer: share,
+    objectKey,
+    contentLength: share.byteLength,
+  };
+}
+
+export async function getResultShareImageObject(input: {
+  userId: string;
+  taskId: string;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const objectKey = getResultShareImageObjectKey(input.userId, input.taskId);
+  const output = await client.send(
+    new GetObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+    }),
+  );
+
+  if (!output.Body) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "分享图不存在", 404);
+  }
+
+  return {
+    body: output.Body.transformToWebStream(),
+    contentLength: output.ContentLength,
+    contentType: output.ContentType ?? "image/webp",
+    etag: output.ETag,
+    lastModified: output.LastModified,
+  };
+}
+
+export async function createResultPreviewImageBuffer(source: Buffer) {
+  return sharp(source)
+    .rotate()
+    .resize({ width: 520, withoutEnlargement: true })
+    .webp({ quality: 72 })
+    .toBuffer();
+}
+
+export async function createResultCardImageBuffer(source: Buffer) {
+  return sharp(source)
+    .rotate()
+    .resize({ width: 500, height: 400, fit: "cover", withoutEnlargement: false })
+    .jpeg({ quality: 82, progressive: true })
+    .toBuffer();
+}
+
+export async function createResultShareThumbImageBuffer(source: Buffer) {
+  return sharp(source)
+    .rotate()
+    .resize({ width: 120, height: 120, fit: "cover", withoutEnlargement: false })
+    .jpeg({ quality: 68, progressive: false })
+    .toBuffer();
+}
+
+export async function persistResultCardImage(input: {
+  userId: string;
+  taskId: string;
+  source: Buffer;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const card = await createResultCardImageBuffer(input.source);
+  const objectKey = getResultCardImageObjectKey(input.userId, input.taskId);
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+      Body: card,
+      ContentType: "image/jpeg",
+    }),
+  );
+
+  return {
+    buffer: card,
+    objectKey,
+    contentLength: card.byteLength,
+  };
+}
+
+export async function getResultCardImageObject(input: {
+  userId: string;
+  taskId: string;
+}) {
+  const client = getR2Client();
+
+  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
+  }
+
+  const objectKey = getResultCardImageObjectKey(input.userId, input.taskId);
+  const output = await client.send(
+    new GetObjectCommand({
+      Bucket: config.CLOUDFLARE_R2_BUCKET,
+      Key: objectKey,
+    }),
+  );
+
+  if (!output.Body) {
+    throw new AppError(errorCodes.STORAGE_ERROR, "卡片封面图不存在", 404);
+  }
+
+  return {
+    body: output.Body.transformToWebStream(),
+    contentLength: output.ContentLength,
+    contentType: output.ContentType ?? "image/jpeg",
+    etag: output.ETag,
+    lastModified: output.LastModified,
+  };
+}
+
 export async function deleteObject(objectKey: string) {
   const client = getR2Client();
 
@@ -197,10 +467,30 @@ export async function deleteObject(objectKey: string) {
   );
 }
 
-function buildPublicUrl(objectKey: string) {
+export function buildR2PublicUrl(objectKey: string) {
   if (!config.CLOUDFLARE_R2_PUBLIC_BASE_URL) {
     throw new AppError(errorCodes.STORAGE_ERROR, "图片访问域名未配置", 500);
   }
 
   return `${config.CLOUDFLARE_R2_PUBLIC_BASE_URL.replace(/\/$/, "")}/${objectKey}`;
+}
+
+function buildPublicUrl(objectKey: string) {
+  return buildR2PublicUrl(objectKey);
+}
+
+export function getResultImageObjectKey(userId: string, taskId: string) {
+  return `results/${userId}/${taskId}.png`;
+}
+
+export function getResultShareImageObjectKey(userId: string, taskId: string) {
+  return `results-share/${userId}/${taskId}.webp`;
+}
+
+export function getResultCardImageObjectKey(userId: string, taskId: string) {
+  return `results-card/${userId}/${taskId}.jpg`;
+}
+
+export function getResultPreviewImageObjectKey(userId: string, taskId: string) {
+  return `results-preview/${userId}/${taskId}.webp`;
 }

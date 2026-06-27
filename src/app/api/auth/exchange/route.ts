@@ -4,7 +4,8 @@ import { z } from "zod";
 import { exchangeAppIdentity } from "@/features/auth/app-auth-service";
 import { setSessionCookie } from "@/features/auth/session";
 import { apiError, apiOk } from "@/lib/http/errors";
-import { parseJsonBody } from "@/lib/http/request";
+import { getClientIp, parseJsonBody } from "@/lib/http/request";
+import { assertRateLimit } from "@/lib/security/rate-limit";
 import { appPath } from "@/lib/routes";
 
 const exchangeSchema = z.object({
@@ -22,6 +23,22 @@ const exchangeSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const body = exchangeSchema.parse(await parseJsonBody(request));
+    const clientIp = getClientIp(request);
+
+    await assertRateLimit(`auth_exchange:ip:${clientIp}`, {
+      window: "1m",
+      maxRequests: 20,
+    });
+
+    const deviceId = body.device_id ?? body.deviceid;
+
+    if (deviceId) {
+      await assertRateLimit(`auth_exchange:device:${deviceId}`, {
+        window: "1m",
+        maxRequests: 10,
+      });
+    }
+
     const user = await exchangeAppIdentity({
       appToken: body.app_token,
       deviceId: body.device_id ?? body.deviceid,
@@ -32,7 +49,7 @@ export async function POST(request: NextRequest) {
       avatarUrl: body.avatar_url,
       face: body.face,
     });
-    await setSessionCookie(user);
+    await setSessionCookie(user, request);
 
     return apiOk({
       user: {

@@ -22,13 +22,27 @@ import type {
   FortuneGenerationTask,
   FortuneType,
 } from "@/features/fortune/types";
+import { SaveImageOverlay } from "@/components/save-image-overlay";
+import {
+  saveImageToPhone,
+  SaveImageState,
+  shareImage,
+  withPreviewImageAccess,
+} from "@/lib/qfh5-actions";
 import { apiPath } from "@/lib/routes";
 import { createClientId } from "@/lib/utils/client-id";
 import { cn } from "@/lib/utils/cn";
+import { compressImageForUpload } from "@/lib/utils/image-compression";
 
 type Props = {
   initialQuota: FortuneQuotaSnapshot;
   initialGenerations: FortuneGenerationTask[];
+  currentUser: CurrentUserProfile | null;
+};
+
+type CurrentUserProfile = {
+  nickname: string;
+  avatarUrl: string | null;
 };
 
 const fortuneModes: Array<{
@@ -68,62 +82,87 @@ const fortuneModes: Array<{
 ];
 
 const visibleFortuneModes = fortuneModes.filter((mode) => mode.type === "palm");
+const appVisibleEventName = "aidayibin:app-visible";
 
 export function FortunePageApp(props: Props) {
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <section className="mx-auto flex min-h-screen w-full max-w-[1480px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
-        <header className="sticky top-3 z-50 rounded-[24px] border border-[var(--border)] bg-[var(--surface-strong)]/88 px-4 py-3 shadow-[0_18px_54px_rgba(55,42,24,0.12)] backdrop-blur-xl sm:px-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
-                大宜宾 AI Studio
-              </p>
-              <h1 className="text-xl font-black tracking-tight text-[var(--foreground)] sm:text-2xl">
-                AI 算命
-              </h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <a
-                href="#fortune-records"
-                className="inline-flex h-11 items-center gap-2 rounded-[16px] bg-[#27362f] px-4 text-sm font-bold text-[#fff7e6] shadow-lg shadow-[#27362f]/18"
-                aria-label="查看生成记录"
-                title="查看生成记录"
-              >
-                <Clock3 size={18} />
-                <span className="hidden sm:inline">记录</span>
-              </a>
-            </div>
-          </div>
-        </header>
-
-        <FortuneApp {...props} />
-      </section>
+      <FortuneApp {...props} />
     </main>
   );
 }
 
-export function FortuneApp({ initialQuota, initialGenerations }: Props) {
+export function FortuneApp({
+  initialQuota,
+  initialGenerations,
+  currentUser,
+}: Props) {
   const [quota, setQuota] = useState(initialQuota);
   const [generations, setGenerations] = useState(initialGenerations);
+  const [profile, setProfile] = useState(currentUser);
   const [selectedType, setSelectedType] = useState<FortuneType>("palm");
   const [photo, setPhoto] = useState<UploadedPhoto | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notice, setNotice] = useState(
-    "上传 1 张清晰手掌照片，生成 3:4、2K 的掌纹命运走势报告图。",
+    "上传 1 张清晰手掌照片，生成掌纹命运走势报告图。",
   );
   const runningTask = generations.find(
     (task) => task.status === "pending" || task.status === "processing",
   );
   const selectedMode = fortuneModes.find((mode) => mode.type === selectedType)!;
+  const hasUsedExperience =
+    Boolean(profile) && !quota.isUnlimited && quota.campaignRemaining <= 0;
+  const statusText = quota.isUnlimited
+    ? "体验不限"
+    : hasUsedExperience
+      ? "已体验"
+      : "可体验";
 
   useEffect(() => {
     const timer = setInterval(() => {
       void refreshData();
-    }, 12000);
+    }, runningTask ? 5000 : 15000);
 
     return () => clearInterval(timer);
+  }, [runningTask]);
+
+  useEffect(() => {
+    generations
+      .filter((task) => task.status === "succeeded" && task.storedImageUrl)
+      .slice(0, 6)
+      .forEach((task) => {
+        const preview = new window.Image();
+        preview.src =
+          task.previewImageUrl ??
+          withPreviewImageAccess(apiPath(`/fortune/generations/${task.id}/image`));
+      });
+  }, [generations]);
+
+  useEffect(() => {
+    function handleAuthReady(event: Event) {
+      const detail = (event as CustomEvent<CurrentUserProfile>).detail;
+
+      if (detail) {
+        setProfile(detail);
+      }
+
+      void refreshData();
+    }
+
+    window.addEventListener("aidayibin:auth-ready", handleAuthReady);
+
+    return () =>
+      window.removeEventListener("aidayibin:auth-ready", handleAuthReady);
+  }, []);
+
+  useEffect(() => {
+    function handleAppVisible() {
+      void refreshData();
+    }
+
+    window.addEventListener(appVisibleEventName, handleAppVisible);
+
+    return () => window.removeEventListener(appVisibleEventName, handleAppVisible);
   }, []);
 
   async function refreshData() {
@@ -143,6 +182,25 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
     setQuota(payload.quota);
   }
 
+  async function refreshQuota() {
+    const response = await fetch(apiPath("/fortune/generations")).catch(
+      () => null,
+    );
+
+    if (!response?.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      generations: FortuneGenerationTask[];
+      quota: FortuneQuotaSnapshot;
+    };
+    setGenerations(payload.generations);
+    setQuota(payload.quota);
+
+    return payload.quota;
+  }
+
   async function handleFiles(files: FileList | null) {
     const file = files?.[0];
 
@@ -150,7 +208,7 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
       return;
     }
 
-    const compressed = await compressImage(file);
+    const compressed = await compressImageForUpload(file);
     setPhoto({
       id: createClientId("fortune-photo"),
       file: compressed,
@@ -164,8 +222,20 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
       return;
     }
 
-    if (!quota.isUnlimited && quota.dailyRemaining <= 0) {
-      setNotice("今天的 AI 算命体验次数已用完，明天再来试试。");
+    const latestQuota = await refreshQuota();
+
+    if (!latestQuota) {
+      setNotice("正在同步登录信息，请稍后再试。");
+      return;
+    }
+
+    if (!profile) {
+      setNotice("正在同步登录信息，请稍后再试。");
+      return;
+    }
+
+    if (!latestQuota.isUnlimited && latestQuota.campaignRemaining <= 0) {
+      setNotice("你已经体验过一次了，快来邀请朋友一起测试吧。");
       return;
     }
 
@@ -191,7 +261,7 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
         return;
       }
 
-      setNotice("已提交生成。完成后会出现在记录里，可下载、分享或删除。");
+      setNotice("已提交生成。完成后会出现在记录里，快来邀请朋友一起测试吧。");
       setPhoto(null);
       await refreshData();
     } catch (error) {
@@ -202,37 +272,67 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
   }
 
   return (
-    <div className="relative z-10 grid flex-1 gap-6 py-6 xl:grid-cols-[minmax(0,1.25fr)_430px] xl:items-start">
-      <div className="space-y-6">
-        <section className="relative overflow-hidden rounded-[24px] border border-[var(--border)] bg-[#f6efd9] p-5 shadow-[0_24px_70px_rgba(55,42,24,0.14)] sm:p-7 lg:p-8">
+    <section className="mx-auto flex min-h-screen w-full max-w-[1480px] flex-col px-4 py-3 sm:px-6 lg:px-8 lg:py-6">
+      <header className="sticky top-3 z-50 rounded-[20px] border border-[var(--border)] bg-[var(--surface-strong)]/88 px-4 py-2.5 shadow-[0_18px_54px_rgba(55,42,24,0.12)] backdrop-blur-xl sm:px-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
+                大宜宾 AI Studio
+              </p>
+              <h1 className="text-lg font-black tracking-tight text-[var(--foreground)] sm:text-2xl">
+                AI 算命
+              </h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <UserPill currentUser={profile} />
+              <ThemeToggle />
+              <a
+                href="#fortune-records"
+                className="inline-flex h-11 items-center gap-2 rounded-[16px] bg-[#27362f] px-4 text-sm font-bold text-[#fff7e6] shadow-lg shadow-[#27362f]/18"
+                aria-label="查看生成记录"
+                title="查看生成记录"
+              >
+                <Clock3 size={18} />
+                <span className="hidden sm:inline">记录</span>
+              </a>
+            </div>
+          </div>
+        </header>
+      <div className="mt-3 grid grid-cols-2 gap-2 rounded-[18px] border border-[#eadabb] bg-[#fff9e8] p-2 text-sm shadow-[0_12px_34px_rgba(55,42,24,0.08)]">
+        <QuotaPill label="体验状态" value={statusText} />
+        <QuotaPill label="生成中" value={runningTask ? "1" : "0"} />
+      </div>
+      <div className="relative z-10 grid flex-1 gap-4 py-4 xl:grid-cols-[minmax(0,1.25fr)_430px] xl:items-start">
+      <div className="space-y-4">
+        <section className="relative overflow-hidden rounded-[22px] border border-[var(--border)] bg-[#f6efd9] p-4 shadow-[0_18px_54px_rgba(55,42,24,0.12)] sm:p-6 lg:p-7">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(48,67,62,0.08)_1px,transparent_1px),linear-gradient(180deg,rgba(48,67,62,0.06)_1px,transparent_1px)] bg-[size:42px_42px]" />
           <div className="relative">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#b88b50] bg-[#fff9e8] px-3 py-2 text-sm font-bold text-[var(--accent)]">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#b88b50] bg-[#fff9e8] px-3 py-1.5 text-xs font-bold text-[var(--accent)]">
               <ImagePlus size={17} />
               AI 算命 · 传统文化娱乐体验
             </div>
-            <h2 className="mt-5 max-w-2xl text-4xl font-black leading-[1.05] tracking-normal text-[var(--foreground)] sm:text-5xl lg:text-6xl">
-              上传手掌照片，生成一张适合分享的掌纹命运走势报告
+            <h2 className="mt-3 max-w-2xl text-2xl font-black leading-tight tracking-normal text-[var(--foreground)] sm:text-4xl lg:text-5xl">
+              AI 看手相
             </h2>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[#6e6048]">
-              根据手掌与掌纹生成 3:4、2K 的一生命运走势报告。分析结果仅供娱乐参考，不构成医学、投资、法律或人生决策建议。
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6e6048] sm:text-base">
+              上传手掌照片，生成适合分享的掌纹命运走势报告。结果仅供娱乐参考。
             </p>
           </div>
         </section>
 
-        <section className="rounded-[24px] border border-[var(--border)] bg-[var(--surface-strong)] p-4 shadow-[0_18px_54px_rgba(55,42,24,0.10)] sm:p-5">
+        <section className="rounded-[22px] border border-[var(--border)] bg-[var(--surface-strong)] p-3 shadow-[0_14px_40px_rgba(55,42,24,0.08)] sm:p-4">
           <SectionTitle
             icon={<ImagePlus size={18} />}
             title="选择栏目"
-            subtitle="上传清晰手掌照片，生成掌纹命运走势报告"
+            subtitle="后续会加入更多玩法"
           />
-          <div className="mt-4 grid gap-3">
+          <div className="mt-3 grid gap-2">
             {visibleFortuneModes.map((mode) => (
               <button
                 type="button"
                 key={mode.type}
                 className={cn(
-                  "rounded-[18px] border p-4 text-left transition hover:-translate-y-0.5",
+                  "flex items-center gap-3 rounded-[16px] border px-3 py-2.5 text-left transition hover:-translate-y-0.5",
                   selectedType === mode.type
                     ? "border-[#9b6b34] bg-[#f2e1bc] shadow-[0_16px_42px_rgba(85,54,22,0.16)]"
                     : "border-[#e3d4b2] bg-[var(--surface-strong)] hover:border-[#b88b50]",
@@ -244,40 +344,30 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
                   );
                 }}
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#27362f] text-[#f6efd9]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#27362f] text-[#f6efd9]">
                   {mode.icon}
                 </span>
-                <h3 className="mt-4 text-lg font-black text-[var(--foreground)]">
-                  {mode.title}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-[#6e6048]">
-                  {mode.description}
-                </p>
+                <span>
+                  <span className="block text-sm font-black text-[var(--foreground)]">
+                    {mode.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-5 text-[#6e6048]">
+                    {mode.description}
+                  </span>
+                </span>
               </button>
             ))}
           </div>
         </section>
       </div>
 
-      <aside className="space-y-6 xl:sticky xl:top-36">
+      <aside className="space-y-4 xl:sticky xl:top-32">
         <section className="rounded-[24px] border border-[var(--border)] bg-[var(--surface-strong)] p-5 shadow-[0_18px_54px_rgba(55,42,24,0.10)]">
           <SectionTitle
             icon={selectedMode.icon}
             title={selectedMode.title}
             subtitle={selectedMode.description}
           />
-
-          <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-            <QuotaPill
-              label="今日剩余"
-              value={quota.isUnlimited ? "不限" : `${quota.dailyRemaining}`}
-            />
-            <QuotaPill
-              label="活动剩余"
-              value={quota.isUnlimited ? "不限" : `${quota.campaignRemaining}`}
-            />
-            <QuotaPill label="生成中" value={runningTask ? "1" : "0"} />
-          </div>
 
           <div className="mt-5 rounded-[18px] border border-[#eadabb] bg-[var(--surface-strong)] p-4">
             <p className="text-sm font-black text-[var(--foreground)]">上传要求</p>
@@ -338,7 +428,9 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
           </div>
 
           <div className="mt-4 rounded-[18px] bg-[#f6efd9] p-4 text-sm leading-6 text-[#6e6048]">
-            {notice}
+            {hasUsedExperience && !runningTask
+              ? "你已经生成过 AI 算命报告啦，快来邀请朋友一起测试吧。"
+              : notice}
           </div>
 
           <button
@@ -383,10 +475,11 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-2">
-              {generations.map((task) => (
+              {generations.map((task, index) => (
                 <FortuneGenerationCard
                   key={task.id}
                   task={task}
+                  priority={index < 4}
                   onDeleted={() => void refreshData()}
                 />
               ))}
@@ -394,7 +487,8 @@ export function FortuneApp({ initialQuota, initialGenerations }: Props) {
           )}
         </section>
       </aside>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -437,15 +531,58 @@ function QuotaPill({ label, value }: { label: string; value: string }) {
   );
 }
 
+function UserPill({ currentUser }: { currentUser: CurrentUserProfile | null }) {
+  if (!currentUser) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-strong)]/86 px-3 py-1.5 text-xs font-bold text-[var(--primary)] shadow-sm backdrop-blur">
+        登录后体验
+      </span>
+    );
+  }
+
+  const nickname = currentUser.nickname || "大宜宾用户";
+  const fallbackText = nickname.trim().slice(0, 1) || "大";
+
+  return (
+    <div
+      className="inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface-strong)]/86 shadow-sm backdrop-blur"
+      title={nickname}
+      aria-label={nickname}
+    >
+      <span className="relative flex h-full w-full shrink-0 overflow-hidden rounded-full bg-[var(--chip-surface)] text-sm font-black text-[var(--primary)]">
+        {currentUser.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={currentUser.avatarUrl}
+            alt={nickname}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            {fallbackText}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function FortuneGenerationCard({
   task,
+  priority,
   onDeleted,
 }: {
   task: FortuneGenerationTask;
+  priority: boolean;
   onDeleted: () => void;
 }) {
-  const isReady = task.status === "succeeded" && task.storedImageUrl;
-  const imageUrl = apiPath(`/fortune/generations/${task.id}/image`);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [saveStage, setSaveStage] = useState<SaveImageState | null>(null);
+  const isReady = task.status === "succeeded" && task.publicImageUrl;
+  const previewUrl =
+    task.previewImageUrl ??
+    withPreviewImageAccess(apiPath(`/fortune/generations/${task.id}/image`));
   const statusLabel = {
     pending: "排队中",
     processing: "生成中",
@@ -462,19 +599,45 @@ function FortuneGenerationCard({
   }
 
   async function share() {
-    if (!task.storedImageUrl) {
+    if (!task.sharePageUrl || !task.publicImageUrl || isSharing) {
       return;
     }
 
-    const shareUrl = new URL(imageUrl, window.location.origin).toString();
+    setIsSharing(true);
+    try {
+      const sharePageUrl = task.sharePageUrl;
+      const shareImageUrl =
+        task.thumbImageUrl ?? task.cardImageUrl ?? task.publicImageUrl;
+      const title = "我在大宜宾生成了一张 AI 报告图";
+      const description = "点击查看你的专属趣味报告";
 
-    if (navigator.share) {
-      await navigator.share({
-        title: task.typeName,
-        url: shareUrl,
+      await shareImage({
+        title,
+        description,
+        imageUrl: shareImageUrl,
+        pageUrl: sharePageUrl,
       });
-    } else {
-      await navigator.clipboard.writeText(shareUrl);
+    } finally {
+      setIsSharing(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!task.publicImageUrl) return;
+    setIsSaving(true);
+    setSaveStage({ stage: "preparing", message: "正在准备图片，请稍候" });
+    try {
+      const result = await saveImageToPhone({
+        url: task.publicImageUrl,
+        previewUrl,
+        originalUrl: task.originalImageUrl ?? undefined,
+        onStateChange: setSaveStage,
+      });
+      if (result.error !== "app_required") {
+        setSaveStage(null);
+      }
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -483,12 +646,13 @@ function FortuneGenerationCard({
       <div className="relative aspect-[3/4] bg-[#f1e4c6]">
         {isReady ? (
           <Image
-            src={imageUrl}
+            src={previewUrl}
             alt={task.typeName}
             fill
             sizes="220px"
             className="object-cover"
             unoptimized
+            priority={priority}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-[#6e6048]">
@@ -512,27 +676,39 @@ function FortuneGenerationCard({
           {task.ratio} · {task.resolution}
         </p>
         <div className="mt-3 flex gap-2">
-          <a
-            href={isReady ? imageUrl : "#"}
-            download
+          <button
+            type="button"
             className={cn(
               "inline-flex h-9 flex-1 items-center justify-center rounded-[12px] bg-[#f6efd9] text-[#73583a]",
               !isReady && "pointer-events-none opacity-40",
             )}
-            aria-label="下载图片"
-            title="下载图片"
+            disabled={!isReady || isSaving}
+            onClick={() => void handleSave()}
+            aria-label="保存图片"
+            title="保存图片"
           >
-            <Download size={16} />
-          </a>
+            {isSaving ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Download size={16} />
+            )}
+            <span className="ml-1 text-xs font-black">
+              {isSaving ? "保存中" : "保存"}
+            </span>
+          </button>
           <button
             type="button"
             className="inline-flex h-9 flex-1 items-center justify-center rounded-[12px] bg-[#f6efd9] text-[#73583a] disabled:opacity-40"
-            disabled={!isReady}
+            disabled={!isReady || isSharing}
             onClick={() => void share()}
             aria-label="分享图片"
             title="分享图片"
           >
-            <Share2 size={16} />
+            {isSharing ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Share2 size={16} />
+            )}
           </button>
           <button
             type="button"
@@ -545,6 +721,16 @@ function FortuneGenerationCard({
           </button>
         </div>
       </div>
+      {saveStage && (
+        <SaveImageOverlay
+          state={saveStage}
+          onClose={() => setSaveStage(null)}
+          onRetry={() => {
+            setSaveStage(null);
+            void handleSave();
+          }}
+        />
+      )}
     </article>
   );
 }
@@ -574,35 +760,4 @@ async function uploadPhotos(photos: UploadedPhoto[]) {
   }
 
   return urls;
-}
-
-async function compressImage(file: File) {
-  if (file.size <= 2.5 * 1024 * 1024) {
-    return file;
-  }
-
-  const image = await createImageBitmap(file);
-  const maxSide = 1600;
-  const scale = Math.min(maxSide / image.width, maxSide / image.height, 1);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(image.width * scale);
-  canvas.height = Math.round(image.height * scale);
-  const context = canvas.getContext("2d");
-
-  if (!context) {
-    return file;
-  }
-
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.86),
-  );
-
-  if (!blob) {
-    return file;
-  }
-
-  return new File([blob], file.name.replace(/\.\w+$/, ".jpg"), {
-    type: "image/jpeg",
-  });
 }

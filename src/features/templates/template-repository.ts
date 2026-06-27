@@ -1,7 +1,9 @@
 import { defaultTemplates } from "@/features/templates/default-templates";
 import type { PhotoTemplate } from "@/features/templates/types";
 import type { PhotoTemplateRecord } from "@/lib/db/database.types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { defaultSystemConfigs } from "@/lib/db/default-system-configs";
+import { prisma } from "@/lib/db/prisma";
+import { toPhotoTemplateRecord } from "@/lib/db/records";
 
 function mapTemplateRecord(record: PhotoTemplateRecord): PhotoTemplate {
   return {
@@ -46,32 +48,18 @@ function mapTemplateToRecord(template: PhotoTemplate) {
 }
 
 export async function listTemplates({ includeInactive = false } = {}) {
-  const supabase = getSupabaseAdmin();
+  const data = await prisma.photoTemplate.findMany({
+    where: includeInactive ? undefined : { is_active: true },
+    orderBy: { sort_order: "asc" },
+  });
 
-  if (!supabase) {
+  if (data.length === 0) {
     return defaultTemplates.filter(
       (template) => includeInactive || template.isActive,
     );
   }
 
-  let query = supabase
-    .from("photo_templates")
-    .select("*")
-    .order("sort_order", { ascending: true });
-
-  if (!includeInactive) {
-    query = query.eq("is_active", true);
-  }
-
-  const { data, error } = await query;
-
-  if (error || !data || data.length === 0) {
-    return defaultTemplates.filter(
-      (template) => includeInactive || template.isActive,
-    );
-  }
-
-  return data.map((record) => mapTemplateRecord(record));
+  return data.map((record) => mapTemplateRecord(toPhotoTemplateRecord(record)));
 }
 
 export async function getTemplateById(templateId: string) {
@@ -80,19 +68,26 @@ export async function getTemplateById(templateId: string) {
 }
 
 export async function seedDefaultTemplates() {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return { seeded: 0, skipped: true };
-  }
-
-  const { error } = await supabase
-    .from("photo_templates")
-    .upsert(defaultTemplates.map(mapTemplateToRecord), { onConflict: "id" });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  await Promise.all([
+    ...defaultSystemConfigs.map((item) =>
+      prisma.systemConfig.upsert({
+        where: { key: item.key },
+        create: item,
+        update: {
+          value: item.value,
+          description: item.description,
+        },
+      }),
+    ),
+    ...defaultTemplates.map((template) => {
+      const record = mapTemplateToRecord(template);
+      return prisma.photoTemplate.upsert({
+        where: { id: record.id },
+        create: record,
+        update: record,
+      });
+    }),
+  ]);
 
   return { seeded: defaultTemplates.length, skipped: false };
 }

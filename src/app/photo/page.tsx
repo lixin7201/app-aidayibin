@@ -7,6 +7,9 @@ import type {
   PublicPhotoTemplate,
 } from "@/features/templates/types";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function toPublicTemplate(template: PhotoTemplate): PublicPhotoTemplate {
   return {
     id: template.id,

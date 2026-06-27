@@ -6,11 +6,13 @@ import {
   decodeSignedCookie,
   encodeSignedCookie,
 } from "@/lib/auth/signed-cookie";
-import { isMockEnabled } from "@/lib/config";
+import { config, isMockEnabled } from "@/lib/config";
 import { AppError, errorCodes } from "@/lib/http/errors";
 import { cookiePath } from "@/lib/routes";
 
 const sessionCookieName = "aidayibin_session";
+const mockAppUserId = "mock-dayibin-user-001";
+const useSecureCookies = config.NEXT_PUBLIC_APP_URL.startsWith("https://");
 
 export type SessionUser = {
   id: string;
@@ -20,17 +22,40 @@ export type SessionUser = {
   deviceId: string | null;
 };
 
-function decodeSession(value: string | undefined) {
-  return decodeSignedCookie<SessionUser>(value);
+function shouldUseSecureCookie(request?: NextRequest) {
+  if (request) {
+    const forwardedProto = request.headers
+      .get("x-forwarded-proto")
+      ?.split(",")[0]
+      ?.trim();
+
+    if (forwardedProto) {
+      return forwardedProto === "https";
+    }
+
+    return new URL(request.url).protocol === "https:";
+  }
+
+  return useSecureCookies;
 }
 
-export async function setSessionCookie(user: SessionUser) {
+function decodeSession(value: string | undefined) {
+  const session = decodeSignedCookie<SessionUser>(value);
+
+  if (session?.appUserId === mockAppUserId && !isMockEnabled) {
+    return null;
+  }
+
+  return session;
+}
+
+export async function setSessionCookie(user: SessionUser, request?: NextRequest) {
   const cookieStore = await cookies();
 
   cookieStore.set(sessionCookieName, encodeSignedCookie(user), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(request),
     path: cookiePath,
     maxAge: 60 * 60 * 24 * 30,
   });
@@ -44,10 +69,6 @@ export async function getSessionFromCookies() {
     return session;
   }
 
-  if (isMockEnabled) {
-    return getMockSessionUser();
-  }
-
   return null;
 }
 
@@ -56,10 +77,6 @@ export function getSessionFromRequest(request: NextRequest) {
 
   if (session) {
     return session;
-  }
-
-  if (isMockEnabled) {
-    return getMockSessionUser();
   }
 
   return null;
@@ -90,7 +107,7 @@ export async function requireStoredSessionFromRequest(request: NextRequest) {
 export function getMockSessionUser(): SessionUser {
   return {
     id: "00000000-0000-4000-8000-000000000001",
-    appUserId: "mock-dayibin-user-001",
+    appUserId: mockAppUserId,
     nickname: "大宜宾体验用户",
     avatarUrl: null,
     deviceId: "mock-device-001",

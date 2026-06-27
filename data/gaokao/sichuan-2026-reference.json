@@ -1,0 +1,114 @@
+{
+  "batchLines": [
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "历史类",
+      "batch": "特殊类型招生录取控制分数线",
+      "score": 525,
+      "sourceUrl": "https://www.sceea.cn/Html/202606/Newsdetail_4853.html"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "历史类",
+      "batch": "本科批次",
+      "score": 455,
+      "sourceUrl": "https://www.sceea.cn/Html/202606/Newsdetail_4853.html"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "历史类",
+      "batch": "高职（专科）批次",
+      "score": 150,
+      "sourceUrl": "https://www.sceea.cn/Html/202606/Newsdetail_4853.html"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "物理类",
+      "batch": "特殊类型招生录取控制分数线",
+      "score": 519,
+      "sourceUrl": "https://www.sceea.cn/Html/202606/Newsdetail_4853.html"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "物理类",
+      "batch": "本科批次",
+      "score": 435,
+      "sourceUrl": "https://www.sceea.cn/Html/202606/Newsdetail_4853.html"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "物理类",
+      "batch": "高职（专科）批次",
+      "score": 150,
+      "sourceUrl": "https://www.sceea.cn/Html/202606/Newsdetail_4853.html"
+    }
+  ],
+  "scoreSegments": [
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "历史类",
+      "score": 525,
+      "sameScoreCount": 594,
+      "cumulativeRank": 31126,
+      "lineType": "特殊类型招生录取控制分数线",
+      "sourceUrl": "https://www.sceea.cn/Upload/image/20260625/20260625185909_0188.jpg"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "历史类",
+      "score": 455,
+      "sameScoreCount": 666,
+      "cumulativeRank": 77300,
+      "lineType": "本科批次线",
+      "sourceUrl": "https://www.sceea.cn/Upload/image/20260625/20260625185909_4741.jpg"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "历史类",
+      "score": 150,
+      "sameScoreCount": 6,
+      "cumulativeRank": 177497,
+      "lineType": "高职（专科）批次线",
+      "sourceUrl": "https://www.sceea.cn/Upload/image/20260625/20260625185915_4345.jpg"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "物理类",
+      "score": 519,
+      "sameScoreCount": 1369,
+      "cumulativeRank": 109476,
+      "lineType": "特殊类型招生录取控制分数线",
+      "sourceUrl": "https://www.sceea.cn/Upload/image/20260625/20260625185751_9385.jpg"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "物理类",
+      "score": 435,
+      "sameScoreCount": 1058,
+      "cumulativeRank": 218562,
+      "lineType": "本科批次线",
+      "sourceUrl": "https://www.sceea.cn/Upload/image/20260625/20260625185752_9577.jpg"
+    },
+    {
+      "year": 2026,
+      "province": "四川",
+      "subjectType": "物理类",
+      "score": 150,
+      "sameScoreCount": 2,
+      "cumulativeRank": 292426,
+      "lineType": "高职（专科）批次线",
+      "sourceUrl": "https://www.sceea.cn/Upload/image/20260625/20260625185755_7219.jpg"
+    }
+  ]
+}

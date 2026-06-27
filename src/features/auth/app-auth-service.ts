@@ -63,7 +63,13 @@ export async function exchangeAppIdentity({
   const normalizedNickname = nickname ?? username;
   const normalizedAvatarUrl = avatarUrl ?? face;
 
-  if (normalizedAppUserId) {
+  // Legacy App WebView integration only exposes QFH5 uid today. Prefer
+  // APP_AUTH_VERIFY_URL when configured, but keep current App login working
+  // until the native side can provide a short-lived app_token.
+  if (
+    normalizedAppUserId &&
+    (process.env.NODE_ENV !== "production" || !config.APP_AUTH_VERIFY_URL)
+  ) {
     return buildSessionUser({
       appUserId: normalizedAppUserId,
       nickname: normalizedNickname,

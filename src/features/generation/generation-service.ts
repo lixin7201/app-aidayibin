@@ -1,17 +1,23 @@
 import type { SessionUser } from "@/features/auth/session";
 import type { CreateGenerationInput } from "@/features/generation/generation-schemas";
 import {
-  createGenerationRecord,
   markGenerationFailed,
   updateGenerationProviderTask,
 } from "@/features/generation/generation-repository";
+import { syncPendingGenerationTasks } from "@/features/generation/generation-sync";
 import { getTemplateById } from "@/features/templates/template-repository";
 import {
   assertCanCreateGeneration,
-  incrementSubmitCount,
+  getBeijingDate,
 } from "@/features/quota/quota-service";
 import { createImageGenerationTask } from "@/lib/apimart/client";
 import { config, isMockEnabled } from "@/lib/config";
+import {
+  acquireMysqlAdvisoryLock,
+  releaseMysqlAdvisoryLock,
+} from "@/lib/db/mysql-lock";
+import { prisma } from "@/lib/db/prisma";
+import { toGenerationTaskRecord } from "@/lib/db/records";
 import { AppError, errorCodes } from "@/lib/http/errors";
 
 export async function submitGeneration(input: {
@@ -34,24 +40,94 @@ export async function submitGeneration(input: {
     throw new AppError(errorCodes.TEMPLATE_DISABLED, "该模板不支持所选比例");
   }
 
-  await assertCanCreateGeneration(input.user);
+  // 同步任务状态（涉及外部 API，放在锁外）
+  await syncPendingGenerationTasks({ userId: input.user.id });
 
-  if (!isMockEnabled) {
-    await incrementSubmitCount(input.user.id);
-  }
+  // 额度预检（快速失败）
+  await assertCanCreateGeneration(input.user);
 
   const shouldUseMockProvider = isMockEnabled && !config.APIMART_API_KEY;
   const provider = shouldUseMockProvider ? "mock" : "apimart";
-  const task = await createGenerationRecord({
-    user: input.user,
-    input: input.payload,
-    submitIp: input.submitIp,
-    userAgent: input.userAgent,
-    provider,
+
+  // 在事务中获取 MySQL 顾问锁，保证同一用户并发提交的原子性
+  const task = await prisma.$transaction(async (tx) => {
+    const lockKey = `ai_quota:${input.user.id}:photo`;
+    const lockAcquired = await acquireMysqlAdvisoryLock(tx, lockKey, 5);
+
+    if (!lockAcquired) {
+      throw new AppError(
+        errorCodes.RUNNING_TASK_EXISTS,
+        "系统繁忙，请稍后再试",
+      );
+    }
+
+    try {
+      // 在锁保护下再次检查 running task（防止并发窗口）
+      const runningCount = await tx.generationTask.count({
+        where: {
+          user_id: input.user.id,
+          status: { in: ["pending", "processing"] },
+          deleted_at: null,
+        },
+      });
+
+      if (runningCount > 0) {
+        throw new AppError(
+          errorCodes.RUNNING_TASK_EXISTS,
+          "你已有一张图片正在生成，请稍后查看",
+        );
+      }
+
+      // 创建任务记录
+      const taskId = crypto.randomUUID();
+      const data = await tx.generationTask.create({
+        data: {
+          id: taskId,
+          user_id: input.user.id,
+          template_id: input.payload.template_id,
+          provider,
+          status: "pending",
+          gender: input.payload.gender,
+          age_range: input.payload.age_range,
+          ratio: input.payload.ratio,
+          resolution: input.payload.resolution,
+          input_image_count: input.payload.image_urls.length,
+          temp_input_urls: input.payload.image_urls,
+          submit_ip: input.submitIp,
+          device_id: input.user.deviceId,
+          user_agent: input.userAgent,
+        },
+      });
+
+      // 更新提交计数
+      if (!isMockEnabled) {
+        const usageDate = getBeijingDate();
+        await tx.dailyUsage.upsert({
+          where: {
+            user_id_usage_date: {
+              user_id: input.user.id,
+              usage_date: usageDate,
+            },
+          },
+          create: {
+            user_id: input.user.id,
+            usage_date: usageDate,
+            submit_count: 1,
+          },
+          update: {
+            submit_count: { increment: 1 },
+          },
+        });
+      }
+
+      return toGenerationTaskRecord(data);
+    } finally {
+      await releaseMysqlAdvisoryLock(tx, lockKey);
+    }
   });
 
   try {
-  const providerTask = await createImageGenerationTask({
+    const providerTask = await createImageGenerationTask({
       prompt: buildPrompt(template.prompt, input.payload.gender),
       negativePrompt: template.negativePrompt,
       imageUrls: input.payload.image_urls,

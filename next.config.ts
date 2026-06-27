@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/photo",
+        headers: noStoreHeaders(),
+      },
+      {
+        source: "/fortune",
+        headers: noStoreHeaders(),
+      },
+      {
+        source: "/api/:path*",
+        headers: noStoreHeaders(),
+      },
+      {
         source: "/templates/thumbs/:path*",
         headers: [
           {
@@ -64,6 +76,23 @@ const nextConfig: NextConfig = {
 
 function appBasePathOrRoot() {
   return basePath ?? "/";
+}
+
+function noStoreHeaders() {
+  return [
+    {
+      key: "Cache-Control",
+      value: "no-store, no-cache, must-revalidate, proxy-revalidate",
+    },
+    {
+      key: "Pragma",
+      value: "no-cache",
+    },
+    {
+      key: "Expires",
+      value: "0",
+    },
+  ];
 }
 
 export default nextConfig;

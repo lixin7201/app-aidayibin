@@ -1,5 +1,4 @@
 import type { SessionUser } from "@/features/auth/session";
-import { isMissingFortuneTableError } from "@/features/fortune/fortune-db";
 import type { CreateFortuneGenerationInput } from "@/features/fortune/fortune-schemas";
 import type { FortuneGenerationTask } from "@/features/fortune/types";
 import {
@@ -7,8 +6,13 @@ import {
   getFortuneTypeName,
 } from "@/features/fortune/types";
 import { syncPendingFortuneTasks } from "@/features/fortune/fortune-sync";
+import { signImageToken } from "@/lib/auth/image-token";
+import { signResultShareToken } from "@/lib/auth/result-share-token";
+import { buildResultSharePageUrl } from "@/lib/share/result-share";
 import type { FortuneGenerationTaskRecord } from "@/lib/db/database.types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { prisma } from "@/lib/db/prisma";
+import { toFortuneGenerationTaskRecord } from "@/lib/db/records";
+import { apiPath } from "@/lib/routes";
 
 export type CreateFortuneTaskRecordInput = {
   user: SessionUser;
@@ -18,7 +22,43 @@ export type CreateFortuneTaskRecordInput = {
   provider: "apimart" | "mock";
 };
 
+function buildPublicImageUrl(
+  taskId: string,
+  variant: "share" | "original" | "card" | "thumb",
+): string {
+  const url = new URL(apiPath(`/fortune/generations/${taskId}/image`), "http://localhost");
+  url.searchParams.set("public", "1");
+  url.searchParams.set("variant", variant);
+  url.searchParams.set("t", signImageToken("fortune", taskId, variant));
+  return url.pathname + url.search;
+}
+
+function buildPreviewImageUrl(taskId: string): string {
+  const url = new URL(apiPath(`/fortune/generations/${taskId}/image`), "http://localhost");
+  url.searchParams.set("preview", "1");
+  return url.pathname + url.search;
+}
+
 function mapFortuneTask(task: FortuneGenerationTaskRecord): FortuneGenerationTask {
+  const hasResultImage = task.status === "succeeded" && Boolean(task.stored_image_url);
+  const previewImageUrl = hasResultImage
+    ? task.preview_image_url ?? buildPreviewImageUrl(task.id)
+    : null;
+  const shareImageUrl = hasResultImage
+    ? task.share_image_url ??
+      task.public_image_url ??
+      buildPublicImageUrl(task.id, "share")
+    : null;
+  const cardImageUrl = hasResultImage
+    ? task.card_image_url ?? buildPublicImageUrl(task.id, "card")
+    : null;
+  const thumbImageUrl = hasResultImage
+    ? buildPublicImageUrl(task.id, "thumb")
+    : null;
+  const originalImageUrl = hasResultImage
+    ? task.stored_image_url ?? buildPublicImageUrl(task.id, "original")
+    : null;
+
   return {
     id: task.id,
     userId: task.user_id,
@@ -30,6 +70,20 @@ function mapFortuneTask(task: FortuneGenerationTaskRecord): FortuneGenerationTas
     resolution: task.resolution,
     inputImageCount: task.input_image_count,
     storedImageUrl: task.stored_image_url,
+    previewImageUrl,
+    shareImageUrl,
+    thumbImageUrl,
+    publicImageUrl: shareImageUrl,
+    cardImageUrl,
+    originalImageUrl,
+    sharePageUrl:
+      hasResultImage
+        ? buildResultSharePageUrl(
+            "fortune",
+            task.id,
+            signResultShareToken("fortune", task.id),
+          )
+        : null,
     errorMessage: task.error_message,
     createdAt: task.created_at,
     completedAt: task.completed_at,
@@ -43,46 +97,12 @@ export async function createFortuneRecord({
   userAgent,
   provider,
 }: CreateFortuneTaskRecordInput) {
-  const supabase = getSupabaseAdmin();
   const taskId = crypto.randomUUID();
   const featureType = getFortuneFeatureType(input.type);
   const promptType = input.type === "palm" ? "palm_report" : "face_report";
 
-  if (!supabase) {
-    return {
-      id: taskId,
-      user_id: user.id,
-      fortune_type: input.type,
-      feature_type: featureType,
-      prompt_type: promptType,
-      provider,
-      provider_task_id: null,
-      status: "pending",
-      ratio: input.ratio,
-      resolution: input.resolution,
-      input_image_count: input.image_urls.length,
-      temp_input_urls: input.image_urls,
-      provider_result_url: null,
-      stored_image_url: null,
-      error_code: null,
-      error_message: null,
-      submit_ip: submitIp,
-      device_id: user.deviceId,
-      user_agent: userAgent,
-      counts_quota: false,
-      quota_counted_at: null,
-      metadata: {},
-      lock_until: null,
-      created_at: new Date().toISOString(),
-      submitted_at: null,
-      completed_at: null,
-      deleted_at: null,
-    } satisfies FortuneGenerationTaskRecord;
-  }
-
-  const { data, error } = await supabase
-    .from("fortune_generation_tasks")
-    .insert({
+  const data = await prisma.fortuneGenerationTask.create({
+    data: {
       id: taskId,
       user_id: user.id,
       fortune_type: input.type,
@@ -101,35 +121,24 @@ export async function createFortuneRecord({
         ratio: input.ratio,
         resolution: input.resolution,
       },
-    })
-    .select("*")
-    .single<FortuneGenerationTaskRecord>();
+    },
+  });
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data;
+  return toFortuneGenerationTaskRecord(data);
 }
 
 export async function updateFortuneProviderTask(
   taskId: string,
   providerTaskId: string,
 ) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
-  await supabase
-    .from("fortune_generation_tasks")
-    .update({
+  await prisma.fortuneGenerationTask.update({
+    where: { id: taskId },
+    data: {
       provider_task_id: providerTaskId,
       status: "processing",
-      submitted_at: new Date().toISOString(),
-    })
-    .eq("id", taskId);
+      submitted_at: new Date(),
+    },
+  });
 }
 
 export async function markFortuneFailed(
@@ -137,96 +146,75 @@ export async function markFortuneFailed(
   errorCode: string,
   errorMessage: string,
 ) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
-  await supabase
-    .from("fortune_generation_tasks")
-    .update({
+  await prisma.fortuneGenerationTask.update({
+    where: { id: taskId },
+    data: {
       status: "failed",
       error_code: errorCode,
       error_message: errorMessage,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", taskId);
+      completed_at: new Date(),
+    },
+  });
 }
 
 export async function listUserFortuneGenerations(userId: string) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return [] satisfies FortuneGenerationTask[];
-  }
-
   await syncPendingFortuneTasks({ userId });
 
-  const { data, error } = await supabase
-    .from("fortune_generation_tasks")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
+  const data = await prisma.fortuneGenerationTask.findMany({
+    where: {
+      user_id: userId,
+      deleted_at: null,
+    },
+    orderBy: { created_at: "desc" },
+  });
 
-  if (isMissingFortuneTableError(error)) {
-    return [];
-  }
-
-  if (error || !data) {
-    return [];
-  }
-
-  return data.map((task) => mapFortuneTask(task));
+  return data.map((task) => mapFortuneTask(toFortuneGenerationTaskRecord(task)));
 }
 
 export async function getUserFortuneGenerationById(
   userId: string,
   taskId: string,
 ) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return null;
-  }
-
   await syncPendingFortuneTasks({ userId, batchSize: 5 });
 
-  const { data, error } = await supabase
-    .from("fortune_generation_tasks")
-    .select("*")
-    .eq("id", taskId)
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .maybeSingle<FortuneGenerationTaskRecord>();
+  const data = await prisma.fortuneGenerationTask.findFirst({
+    where: {
+      id: taskId,
+      user_id: userId,
+      deleted_at: null,
+    },
+  });
 
-  if (isMissingFortuneTableError(error)) {
+  if (!data) {
     return null;
   }
 
-  if (error || !data) {
+  return mapFortuneTask(toFortuneGenerationTaskRecord(data));
+}
+
+export async function getPublicFortuneGenerationById(taskId: string) {
+  const data = await prisma.fortuneGenerationTask.findFirst({
+    where: {
+      id: taskId,
+      deleted_at: null,
+    },
+  });
+
+  if (!data) {
     return null;
   }
 
-  return mapFortuneTask(data);
+  return mapFortuneTask(toFortuneGenerationTaskRecord(data));
 }
 
 export async function softDeleteUserFortuneGeneration(
   userId: string,
   taskId: string,
 ) {
-  const supabase = getSupabaseAdmin();
+  const result = await prisma.fortuneGenerationTask.updateMany({
+    where: { id: taskId, user_id: userId },
+    data: { deleted_at: new Date() },
+  });
 
-  if (!supabase) {
-    return true;
-  }
-
-  const { error } = await supabase
-    .from("fortune_generation_tasks")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", taskId)
-    .eq("user_id", userId);
-
-  return !error;
+  return result.count > 0;
 }

@@ -1,7 +1,8 @@
 import { getImageGenerationTask } from "@/lib/apimart/client";
 import type { GenerationTaskRecord } from "@/lib/db/database.types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
-import { persistRemoteImage } from "@/lib/storage/r2";
+import { prisma } from "@/lib/db/prisma";
+import { toGenerationTaskRecord } from "@/lib/db/records";
+import { persistRemoteResultImage } from "@/lib/storage/image-storage";
 
 type SyncTaskResult = {
   taskId: string;
@@ -13,47 +14,27 @@ export async function syncPendingGenerationTasks(input?: {
   userId?: string;
   batchSize?: number;
 }) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return [] as SyncTaskResult[];
-  }
-
-  let query = supabase
-    .from("generation_tasks")
-    .select("*")
-    .in("status", ["pending", "processing"])
-    .not("provider_task_id", "is", null)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(input?.batchSize ?? 20);
-
-  if (input?.userId) {
-    query = query.eq("user_id", input.userId);
-  }
-
-  const { data: tasks, error } = await query;
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const tasks = await prisma.generationTask.findMany({
+    where: {
+      status: { in: ["pending", "processing"] },
+      provider_task_id: { not: null },
+      deleted_at: null,
+      ...(input?.userId ? { user_id: input.userId } : {}),
+    },
+    orderBy: { created_at: "asc" },
+    take: input?.batchSize ?? 20,
+  });
 
   const results = [];
 
-  for (const task of tasks ?? []) {
-    results.push(await syncGenerationTask(task));
+  for (const task of tasks) {
+    results.push(await syncGenerationTask(toGenerationTaskRecord(task)));
   }
 
   return results;
 }
 
 export async function syncGenerationTask(task: GenerationTaskRecord) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return { taskId: task.id, status: "skipped" } satisfies SyncTaskResult;
-  }
-
   if (!task.provider_task_id) {
     return { taskId: task.id, status: "skipped" } satisfies SyncTaskResult;
   }
@@ -65,10 +46,10 @@ export async function syncGenerationTask(task: GenerationTaskRecord) {
       providerResult.status === "pending" ||
       providerResult.status === "processing"
     ) {
-      await supabase
-        .from("generation_tasks")
-        .update({ status: providerResult.status })
-        .eq("id", task.id);
+      await prisma.generationTask.update({
+        where: { id: task.id },
+        data: { status: providerResult.status },
+      });
 
       return {
         taskId: task.id,
@@ -77,15 +58,15 @@ export async function syncGenerationTask(task: GenerationTaskRecord) {
     }
 
     if (providerResult.status === "failed") {
-      await supabase
-        .from("generation_tasks")
-        .update({
+      await prisma.generationTask.update({
+        where: { id: task.id },
+        data: {
           status: "failed",
           error_code: providerResult.errorCode ?? "PROVIDER_FAILED",
           error_message: providerResult.errorMessage ?? "AI 生成失败",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", task.id);
+          completed_at: new Date(),
+        },
+      });
 
       const { incrementFailedCount } = await import(
         "@/features/quota/quota-service"
@@ -99,32 +80,37 @@ export async function syncGenerationTask(task: GenerationTaskRecord) {
       throw new Error("Provider succeeded without image URL");
     }
 
-    const storedImageUrl = await persistRemoteImage({
+    const storedImage = await persistRemoteResultImage({
       imageUrl: providerResult.imageUrl,
       userId: task.user_id,
       taskId: task.id,
     });
 
-    const { data: updatedTask, error: updateError } = await supabase
-      .from("generation_tasks")
-      .update({
+    const result = await prisma.generationTask.updateMany({
+      where: {
+        id: task.id,
+        quota_counted_at: null,
+      },
+      data: {
         status: "succeeded",
         provider_result_url: providerResult.imageUrl,
-        stored_image_url: storedImageUrl,
+        stored_image_url: storedImage.originalUrl,
+        public_image_url: storedImage.shareUrl ?? storedImage.originalUrl,
+        preview_image_url: storedImage.previewUrl,
+        share_image_url: storedImage.shareUrl,
+        card_image_url: storedImage.cardUrl,
+        storage_provider: storedImage.provider,
+        storage_object_key: storedImage.originalObjectKey,
+        preview_object_key: storedImage.previewObjectKey,
+        share_object_key: storedImage.shareObjectKey,
+        card_object_key: storedImage.cardObjectKey,
         counts_quota: true,
-        quota_counted_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", task.id)
-      .is("quota_counted_at", null)
-      .select("id")
-      .maybeSingle();
+        quota_counted_at: new Date(),
+        completed_at: new Date(),
+      },
+    });
 
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    if (updatedTask) {
+    if (result.count > 0) {
       const { incrementSuccessCount } = await import(
         "@/features/quota/quota-service"
       );
@@ -135,15 +121,15 @@ export async function syncGenerationTask(task: GenerationTaskRecord) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
 
-    await supabase
-      .from("generation_tasks")
-      .update({
+    await prisma.generationTask.update({
+      where: { id: task.id },
+      data: {
         status: "failed",
         error_code: "WORKER_ERROR",
         error_message: message,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", task.id);
+        completed_at: new Date(),
+      },
+    });
 
     const { incrementFailedCount } = await import(
       "@/features/quota/quota-service"

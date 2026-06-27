@@ -2,11 +2,16 @@ import type { SessionUser } from "@/features/auth/session";
 import type { CreateGenerationInput } from "@/features/generation/generation-schemas";
 import type { GenerationTask } from "@/features/generation/types";
 import { syncPendingGenerationTasks } from "@/features/generation/generation-sync";
+import { signImageToken } from "@/lib/auth/image-token";
+import { signResultShareToken } from "@/lib/auth/result-share-token";
+import { buildResultSharePageUrl } from "@/lib/share/result-share";
 import type {
   GenerationTaskRecord,
   PhotoTemplateRecord,
 } from "@/lib/db/database.types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { prisma } from "@/lib/db/prisma";
+import { toGenerationTaskRecord } from "@/lib/db/records";
+import { apiPath } from "@/lib/routes";
 
 export type CreateTaskRecordInput = {
   user: SessionUser;
@@ -16,11 +21,47 @@ export type CreateTaskRecordInput = {
   provider: "apimart" | "mock";
 };
 
+function buildPublicImageUrl(
+  taskId: string,
+  variant: "share" | "original" | "card" | "thumb",
+): string {
+  const url = new URL(apiPath(`/generations/${taskId}/image`), "http://localhost");
+  url.searchParams.set("public", "1");
+  url.searchParams.set("variant", variant);
+  url.searchParams.set("t", signImageToken("photo", taskId, variant));
+  return url.pathname + url.search;
+}
+
+function buildPreviewImageUrl(taskId: string): string {
+  const url = new URL(apiPath(`/generations/${taskId}/image`), "http://localhost");
+  url.searchParams.set("preview", "1");
+  return url.pathname + url.search;
+}
+
 function mapGenerationTask(
   task: GenerationTaskRecord & {
     photo_templates?: Pick<PhotoTemplateRecord, "name"> | null;
   },
 ): GenerationTask {
+  const hasResultImage = task.status === "succeeded" && Boolean(task.stored_image_url);
+  const previewImageUrl = hasResultImage
+    ? task.preview_image_url ?? buildPreviewImageUrl(task.id)
+    : null;
+  const shareImageUrl = hasResultImage
+    ? task.share_image_url ??
+      task.public_image_url ??
+      buildPublicImageUrl(task.id, "share")
+    : null;
+  const cardImageUrl = hasResultImage
+    ? task.card_image_url ?? buildPublicImageUrl(task.id, "card")
+    : null;
+  const thumbImageUrl = hasResultImage
+    ? buildPublicImageUrl(task.id, "thumb")
+    : null;
+  const originalImageUrl = hasResultImage
+    ? task.stored_image_url ?? buildPublicImageUrl(task.id, "original")
+    : null;
+
   return {
     id: task.id,
     userId: task.user_id,
@@ -31,6 +72,20 @@ function mapGenerationTask(
     resolution: task.resolution,
     inputImageCount: task.input_image_count,
     storedImageUrl: task.stored_image_url,
+    previewImageUrl,
+    shareImageUrl,
+    thumbImageUrl,
+    publicImageUrl: shareImageUrl,
+    cardImageUrl,
+    originalImageUrl,
+    sharePageUrl:
+      hasResultImage
+        ? buildResultSharePageUrl(
+            "photo",
+            task.id,
+            signResultShareToken("photo", task.id),
+          )
+        : null,
     errorMessage: task.error_message,
     createdAt: task.created_at,
     completedAt: task.completed_at,
@@ -44,43 +99,10 @@ export async function createGenerationRecord({
   userAgent,
   provider,
 }: CreateTaskRecordInput) {
-  const supabase = getSupabaseAdmin();
   const taskId = crypto.randomUUID();
 
-  if (!supabase) {
-    return {
-      id: taskId,
-      user_id: user.id,
-      template_id: input.template_id,
-      provider,
-      provider_task_id: null,
-      status: "pending",
-      gender: input.gender,
-      age_range: input.age_range,
-      ratio: input.ratio,
-      resolution: input.resolution,
-      input_image_count: input.image_urls.length,
-      temp_input_urls: input.image_urls,
-      provider_result_url: null,
-      stored_image_url: null,
-      error_code: null,
-      error_message: null,
-      submit_ip: submitIp,
-      device_id: user.deviceId,
-      user_agent: userAgent,
-      counts_quota: false,
-      quota_counted_at: null,
-      lock_until: null,
-      created_at: new Date().toISOString(),
-      submitted_at: null,
-      completed_at: null,
-      deleted_at: null,
-    } satisfies GenerationTaskRecord;
-  }
-
-  const { data, error } = await supabase
-    .from("generation_tasks")
-    .insert({
+  const data = await prisma.generationTask.create({
+    data: {
       id: taskId,
       user_id: user.id,
       template_id: input.template_id,
@@ -95,35 +117,24 @@ export async function createGenerationRecord({
       submit_ip: submitIp,
       device_id: user.deviceId,
       user_agent: userAgent,
-    })
-    .select("*")
-    .single<GenerationTaskRecord>();
+    },
+  });
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data;
+  return toGenerationTaskRecord(data);
 }
 
 export async function updateGenerationProviderTask(
   taskId: string,
   providerTaskId: string,
 ) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
-  await supabase
-    .from("generation_tasks")
-    .update({
+  await prisma.generationTask.update({
+    where: { id: taskId },
+    data: {
       provider_task_id: providerTaskId,
       status: "processing",
-      submitted_at: new Date().toISOString(),
-    })
-    .eq("id", taskId);
+      submitted_at: new Date(),
+    },
+  });
 }
 
 export async function markGenerationFailed(
@@ -131,48 +142,39 @@ export async function markGenerationFailed(
   errorCode: string,
   errorMessage: string,
 ) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
-  await supabase
-    .from("generation_tasks")
-    .update({
+  await prisma.generationTask.update({
+    where: { id: taskId },
+    data: {
       status: "failed",
       error_code: errorCode,
       error_message: errorMessage,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", taskId);
+      completed_at: new Date(),
+    },
+  });
 }
 
 export async function listUserGenerations(userId: string) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return [] satisfies GenerationTask[];
-  }
-
   await syncPendingGenerationTasks({ userId });
 
-  const { data, error } = await supabase
-    .from("generation_tasks")
-    .select(
-      "*, photo_templates:template_id(name)",
-    )
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-
-  if (error || !data) {
-    return [];
-  }
+  const data = await prisma.generationTask.findMany({
+    where: {
+      user_id: userId,
+      deleted_at: null,
+    },
+    include: {
+      photo_templates: {
+        select: { name: true },
+      },
+    },
+    orderBy: { created_at: "desc" },
+  });
 
   return data.map((task) =>
     mapGenerationTask(
-      task as GenerationTaskRecord & {
+      {
+        ...toGenerationTaskRecord(task),
+        photo_templates: task.photo_templates,
+      } as GenerationTaskRecord & {
         photo_templates?: Pick<PhotoTemplateRecord, "name"> | null;
       },
     ),
@@ -180,45 +182,67 @@ export async function listUserGenerations(userId: string) {
 }
 
 export async function getUserGenerationById(userId: string, taskId: string) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return null;
-  }
-
   await syncPendingGenerationTasks({ userId, batchSize: 5 });
 
-  const { data, error } = await supabase
-    .from("generation_tasks")
-    .select("*, photo_templates:template_id(name)")
-    .eq("id", taskId)
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .maybeSingle();
+  const data = await prisma.generationTask.findFirst({
+    where: {
+      id: taskId,
+      user_id: userId,
+      deleted_at: null,
+    },
+    include: {
+      photo_templates: {
+        select: { name: true },
+      },
+    },
+  });
 
-  if (error || !data) {
+  if (!data) {
     return null;
   }
 
   return mapGenerationTask(
-    data as GenerationTaskRecord & {
+    {
+      ...toGenerationTaskRecord(data),
+      photo_templates: data.photo_templates,
+    } as GenerationTaskRecord & {
+      photo_templates?: Pick<PhotoTemplateRecord, "name"> | null;
+    },
+  );
+}
+
+export async function getPublicGenerationById(taskId: string) {
+  const data = await prisma.generationTask.findFirst({
+    where: {
+      id: taskId,
+      deleted_at: null,
+    },
+    include: {
+      photo_templates: {
+        select: { name: true },
+      },
+    },
+  });
+
+  if (!data) {
+    return null;
+  }
+
+  return mapGenerationTask(
+    {
+      ...toGenerationTaskRecord(data),
+      photo_templates: data.photo_templates,
+    } as GenerationTaskRecord & {
       photo_templates?: Pick<PhotoTemplateRecord, "name"> | null;
     },
   );
 }
 
 export async function softDeleteUserGeneration(userId: string, taskId: string) {
-  const supabase = getSupabaseAdmin();
+  const result = await prisma.generationTask.updateMany({
+    where: { id: taskId, user_id: userId },
+    data: { deleted_at: new Date() },
+  });
 
-  if (!supabase) {
-    return true;
-  }
-
-  const { error } = await supabase
-    .from("generation_tasks")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", taskId)
-    .eq("user_id", userId);
-
-  return !error;
+  return result.count > 0;
 }

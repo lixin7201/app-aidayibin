@@ -7,6 +7,7 @@ import { getFortuneQuotaSnapshot } from "@/features/fortune/fortune-quota-servic
 import { submitFortuneGeneration } from "@/features/fortune/fortune-service";
 import { apiError, apiOk } from "@/lib/http/errors";
 import { getClientIp, getUserAgent, parseJsonBody } from "@/lib/http/request";
+import { assertRateLimit } from "@/lib/security/rate-limit";
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,6 +26,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireStoredSessionFromRequest(request);
+
+    await assertRateLimit(`fortune_generations:user:${user.id}`, {
+      window: "1m",
+      maxRequests: 2,
+    });
+
     const payload = createFortuneGenerationSchema.parse(
       await parseJsonBody(request),
     );

@@ -6,6 +6,7 @@ import { listUserGenerations } from "@/features/generation/generation-repository
 import { submitGeneration } from "@/features/generation/generation-service";
 import { apiError, apiOk } from "@/lib/http/errors";
 import { getClientIp, getUserAgent, parseJsonBody } from "@/lib/http/request";
+import { assertRateLimit } from "@/lib/security/rate-limit";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +22,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireStoredSessionFromRequest(request);
+
+    await assertRateLimit(`generations:user:${user.id}`, {
+      window: "1m",
+      maxRequests: 3,
+    });
+
     const payload = createGenerationSchema.parse(await parseJsonBody(request));
     const result = await submitGeneration({
       user,

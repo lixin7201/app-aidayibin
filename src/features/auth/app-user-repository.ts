@@ -1,78 +1,38 @@
 import type { SessionUser } from "@/features/auth/session";
 import type { AppUserRecord } from "@/lib/db/database.types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { prisma } from "@/lib/db/prisma";
+import { toAppUserRecord } from "@/lib/db/records";
 import { AppError, errorCodes } from "@/lib/http/errors";
 
 export async function ensureSessionUser(
   user: SessionUser,
 ): Promise<SessionUser> {
-  const supabase = getSupabaseAdmin();
+  const now = new Date();
 
-  if (!supabase) {
-    return user;
-  }
-
-  const now = new Date().toISOString();
-  const { data: existingUser, error: selectError } = await supabase
-    .from("app_users")
-    .select("*")
-    .eq("app_user_id", user.appUserId)
-    .maybeSingle<AppUserRecord>();
-
-  if (selectError) {
-    throw new AppError(
-      errorCodes.UNKNOWN_ERROR,
-      `用户信息读取失败：${selectError.message}`,
-      500,
-    );
-  }
-
-  if (existingUser) {
-    const { data, error } = await supabase
-      .from("app_users")
-      .update({
+  try {
+    const data = await prisma.appUser.upsert({
+      where: { app_user_id: user.appUserId },
+      create: {
+        app_user_id: user.appUserId,
         nickname: user.nickname,
         avatar_url: user.avatarUrl,
         last_seen_at: now,
-        updated_at: now,
-      })
-      .eq("id", existingUser.id)
-      .select("*")
-      .single<AppUserRecord>();
+      },
+      update: {
+        nickname: user.nickname,
+        avatar_url: user.avatarUrl,
+        last_seen_at: now,
+      },
+    });
 
-    if (error) {
-      throw new AppError(
-        errorCodes.UNKNOWN_ERROR,
-        `用户信息更新失败：${error.message}`,
-        500,
-      );
-    }
-
-    return mapAppUserToSession(data, user.deviceId);
-  }
-
-  const { data, error } = await supabase
-    .from("app_users")
-    .insert({
-      id: user.id,
-      app_user_id: user.appUserId,
-      nickname: user.nickname,
-      avatar_url: user.avatarUrl,
-      last_seen_at: now,
-      updated_at: now,
-    })
-    .select("*")
-    .single<AppUserRecord>();
-
-  if (error) {
+    return mapAppUserToSession(toAppUserRecord(data), user.deviceId);
+  } catch (error) {
     throw new AppError(
       errorCodes.UNKNOWN_ERROR,
-      `用户信息保存失败：${error.message}`,
+      `用户信息保存失败：${getErrorMessage(error)}`,
       500,
     );
   }
-
-  return mapAppUserToSession(data, user.deviceId);
 }
 
 function mapAppUserToSession(
@@ -86,4 +46,8 @@ function mapAppUserToSession(
     avatarUrl: user.avatar_url,
     deviceId,
   };
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误";
 }

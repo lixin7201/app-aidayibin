@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model AppUser {
+  id          String    @id @default(uuid()) @db.Char(36)
+  app_user_id String    @unique @db.VarChar(191)
+  nickname    String?   @db.Text
+  avatar_url  String?   @db.Text
+  status      String    @default("normal") @db.VarChar(32)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  last_seen_at DateTime?
+
+  generation_tasks         GenerationTask[]
+  fortune_generation_tasks FortuneGenerationTask[]
+  gaokao_reports           GaokaoReport[]
+  daily_usage              DailyUsage[]
+
+  @@map("app_users")
+}
+
+model PhotoTemplate {
+  id                 String   @id @db.VarChar(191)
+  name               String   @db.Text
+  slug               String   @unique @db.VarChar(191)
+  category           String   @default("写真") @db.VarChar(191)
+  cover_url          String   @db.Text
+  animated_cover_url String?  @db.Text
+  tagline            String   @db.Text
+  description        String   @db.Text
+  prompt             String   @db.Text
+  negative_prompt    String   @db.Text
+  recommended_ratios Json
+  supported_ratios   Json
+  gender_options     Json
+  age_options        Json
+  sort_order         Int      @default(100)
+  is_active          Boolean  @default(true)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  generation_tasks GenerationTask[]
+
+  @@map("photo_templates")
+}
+
+model GenerationTask {
+  id                  String    @id @default(uuid()) @db.Char(36)
+  user_id             String    @db.Char(36)
+  template_id         String    @db.VarChar(191)
+  provider            String    @default("apimart") @db.VarChar(32)
+  provider_task_id    String?   @db.VarChar(191)
+  status              String    @db.VarChar(32)
+  gender              String    @db.VarChar(32)
+  age_range           String    @db.VarChar(32)
+  ratio               String    @db.VarChar(16)
+  resolution          String    @default("1k") @db.VarChar(16)
+  input_image_count   Int       @default(0)
+  temp_input_urls     Json
+  provider_result_url String?   @db.Text
+  stored_image_url    String?   @db.Text
+  public_image_url    String?   @db.Text
+  preview_image_url   String?   @db.Text
+  share_image_url     String?   @db.Text
+  card_image_url      String?   @db.Text
+  storage_provider    String?   @db.VarChar(32)
+  storage_object_key  String?   @db.VarChar(512)
+  preview_object_key  String?   @db.VarChar(512)
+  share_object_key    String?   @db.VarChar(512)
+  card_object_key     String?   @db.VarChar(512)
+  error_code          String?   @db.VarChar(191)
+  error_message       String?   @db.Text
+  submit_ip           String?   @db.VarChar(191)
+  device_id           String?   @db.VarChar(191)
+  user_agent          String?   @db.Text
+  counts_quota        Boolean   @default(false)
+  quota_counted_at    DateTime?
+  lock_until          DateTime?
+  created_at          DateTime  @default(now())
+  submitted_at        DateTime?
+  completed_at        DateTime?
+  deleted_at          DateTime?
+
+  app_users       AppUser       @relation(fields: [user_id], references: [id])
+  photo_templates PhotoTemplate @relation(fields: [template_id], references: [id])
+
+  @@index([user_id, created_at], map: "idx_generation_tasks_user_created")
+  @@index([status, created_at], map: "idx_generation_tasks_status_created")
+  @@index([provider_task_id], map: "idx_generation_tasks_provider_task")
+  @@map("generation_tasks")
+}
+
+model DailyUsage {
+  id            String   @id @default(uuid()) @db.Char(36)
+  user_id       String   @db.Char(36)
+  usage_date    String   @db.VarChar(10)
+  success_count Int      @default(0)
+  submit_count  Int      @default(0)
+  failed_count  Int      @default(0)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  app_users AppUser @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, usage_date])
+  @@map("daily_usage")
+}
+
+model SystemConfig {
+  key         String   @id @db.VarChar(191)
+  value       Json
+  description String?  @db.Text
+  updated_at  DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+model AdminUser {
+  id            String   @id @default(uuid()) @db.Char(36)
+  username      String   @unique @db.VarChar(191)
+  password_hash String   @db.Text
+  role          String   @default("operator") @db.VarChar(32)
+  status        String   @default("active") @db.VarChar(32)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  admin_audit_logs AdminAuditLog[]
+
+  @@map("admin_users")
+}
+
+model AdminAuditLog {
+  id            String   @id @default(uuid()) @db.Char(36)
+  admin_user_id String?  @db.Char(36)
+  action        String   @db.VarChar(191)
+  target_type   String   @db.VarChar(191)
+  target_id     String?  @db.VarChar(191)
+  metadata      Json
+  created_at    DateTime @default(now())
+
+  admin_users AdminUser? @relation(fields: [admin_user_id], references: [id])
+
+  @@index([admin_user_id])
+  @@map("admin_audit_logs")
+}
+
+model FortuneGenerationTask {
+  id                  String    @id @default(uuid()) @db.Char(36)
+  user_id             String    @db.Char(36)
+  fortune_type        String    @db.VarChar(32)
+  feature_type        String    @db.VarChar(32)
+  prompt_type         String    @db.VarChar(32)
+  provider            String    @default("apimart") @db.VarChar(32)
+  provider_task_id    String?   @db.VarChar(191)
+  status              String    @db.VarChar(32)
+  ratio               String    @default("3:4") @db.VarChar(16)
+  resolution          String    @default("2k") @db.VarChar(16)
+  input_image_count   Int       @default(1)
+  temp_input_urls     Json
+  provider_result_url String?   @db.Text
+  stored_image_url    String?   @db.Text
+  public_image_url    String?   @db.Text
+  preview_image_url   String?   @db.Text
+  share_image_url     String?   @db.Text
+  card_image_url      String?   @db.Text
+  storage_provider    String?   @db.VarChar(32)
+  storage_object_key  String?   @db.VarChar(512)
+  preview_object_key  String?   @db.VarChar(512)
+  share_object_key    String?   @db.VarChar(512)
+  card_object_key     String?   @db.VarChar(512)
+  error_code          String?   @db.VarChar(191)
+  error_message       String?   @db.Text
+  submit_ip           String?   @db.VarChar(191)
+  device_id           String?   @db.VarChar(191)
+  user_agent          String?   @db.Text
+  counts_quota        Boolean   @default(false)
+  quota_counted_at    DateTime?
+  metadata            Json
+  lock_until          DateTime?
+  created_at          DateTime  @default(now())
+  submitted_at        DateTime?
+  completed_at        DateTime?
+  deleted_at          DateTime?
+
+  app_users AppUser @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, created_at], map: "idx_fortune_generation_tasks_user_created")
+  @@index([status, created_at], map: "idx_fortune_generation_tasks_status_created")
+  @@index([provider_task_id], map: "idx_fortune_generation_tasks_provider_task")
+  @@index([feature_type, created_at], map: "idx_fortune_generation_tasks_feature_created")
+  @@map("fortune_generation_tasks")
+}
+
+model ApiRateLimit {
+  id            String   @id @default(uuid()) @db.Char(36)
+  rate_key      String   @db.VarChar(191)
+  window_start  DateTime
+  count         Int      @default(0)
+  expires_at    DateTime
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@unique([rate_key, window_start], map: "idx_rate_limits_key_window_unique")
+  @@index([expires_at], map: "idx_rate_limits_expires")
+  @@map("api_rate_limits")
+}
+
+model GaokaoAdmissionRecord {
+  id           String   @id @default(uuid()) @db.Char(36)
+  source_id    String?  @unique @db.VarChar(191)
+  province     String   @db.VarChar(32)
+  year         Int
+  subject_type String   @db.VarChar(32)
+  batch        String?  @db.VarChar(191)
+  school_name  String   @db.Text
+  major_name   String?  @db.Text
+  score        Int?
+  rank         Int?
+  quota        Int?
+  source_file  String?  @db.Text
+  raw_payload  Json?
+  created_at   DateTime @default(now())
+
+  @@index([province, subject_type, rank], map: "idx_gaokao_adm_prov_subject_rank")
+  @@index([province, subject_type, score], map: "idx_gaokao_adm_prov_subject_score")
+  @@index([year, province, subject_type], map: "idx_gaokao_adm_year_prov_subject")
+  @@map("gaokao_admission_records")
+}
+
+model GaokaoBatchLine {
+  id           String   @id @default(uuid()) @db.Char(36)
+  year         Int
+  province     String   @db.VarChar(32)
+  subject_type String   @db.VarChar(32)
+  batch        String   @db.VarChar(191)
+  score        Int
+  source_url   String?  @db.Text
+  created_at   DateTime @default(now())
+
+  @@unique([year, province, subject_type, batch], map: "uniq_gaokao_batch_line")
+  @@index([year, province, subject_type], map: "idx_gaokao_batch_line_lookup")
+  @@map("gaokao_batch_lines")
+}
+
+model GaokaoScoreSegment {
+  id               String   @id @default(uuid()) @db.Char(36)
+  year             Int
+  province         String   @db.VarChar(32)
+  subject_type     String   @db.VarChar(32)
+  score            Int
+  same_score_count Int
+  cumulative_rank  Int
+  line_type        String?  @db.VarChar(191)
+  source_url       String?  @db.Text
+  created_at       DateTime @default(now())
+
+  @@unique([year, province, subject_type, score], map: "uniq_gaokao_score_segment")
+  @@index([province, subject_type, score], map: "idx_gaokao_segment_lookup")
+  @@map("gaokao_score_segments")
+}
+
+model GaokaoReport {
+  id              String    @id @default(uuid()) @db.Char(36)
+  user_id         String    @db.Char(36)
+  title           String    @db.Text
+  profile         Json
+  recommendations Json
+  summary         String    @db.Text
+  status          String    @default("succeeded") @db.VarChar(32)
+  submit_ip       String?   @db.VarChar(191)
+  device_id       String?   @db.VarChar(191)
+  user_agent      String?   @db.Text
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  deleted_at      DateTime?
+
+  app_users AppUser @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, created_at], map: "idx_gaokao_reports_user_created")
+  @@map("gaokao_reports")
+}

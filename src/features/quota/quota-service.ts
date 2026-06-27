@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { SessionUser } from "@/features/auth/session";
 import { syncPendingGenerationTasks } from "@/features/generation/generation-sync";
 import { isMockEnabled } from "@/lib/config";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { prisma } from "@/lib/db/prisma";
 import { AppError, errorCodes } from "@/lib/http/errors";
 
 export type QuotaSnapshot = {
@@ -45,17 +45,9 @@ export function getBeijingDate(date = new Date()) {
 }
 
 export async function getSystemLimits(): Promise<SystemLimits> {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return defaultLimits;
-  }
-
-  const { data } = await supabase.from("system_configs").select("key,value");
-
-  if (!data) {
-    return defaultLimits;
-  }
+  const data = await prisma.systemConfig.findMany({
+    select: { key: true, value: true },
+  });
 
   return data.reduce<SystemLimits>((limits, item) => {
     if (item.key === "daily_success_limit_per_user") {
@@ -75,7 +67,7 @@ export async function getSystemLimits(): Promise<SystemLimits> {
     }
 
     if (item.key === "feature_enabled") {
-      limits.featureEnabled = Boolean(item.value);
+      limits.featureEnabled = item.value === true || item.value === "true";
     }
 
     return limits;
@@ -105,67 +97,57 @@ export async function getQuotaSnapshot(
     };
   }
 
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return {
-      dailyLimit: limits.dailySuccessLimitPerUser,
-      dailySuccessCount: 0,
-      dailyRemaining: limits.dailySuccessLimitPerUser,
-      campaignLimit: limits.campaignSuccessLimitPerUser,
-      campaignSuccessCount: 0,
-      campaignRemaining: limits.campaignSuccessLimitPerUser,
-      dailySubmitLimit: limits.dailySubmitLimitPerUser,
-      dailySubmitCount: 0,
-      hasRunningTask: false,
-      platformDailyLimit: limits.dailyPlatformSuccessLimit,
-      platformDailySuccessCount: 0,
-      platformDailyRemaining: limits.dailyPlatformSuccessLimit,
-      isUnlimited: false,
-    };
-  }
-
   await syncPendingGenerationTasks({ userId: user.id });
 
   const usageDate = getBeijingDate();
+  const start = new Date(`${usageDate}T00:00:00+08:00`);
 
   const [
-    dailyUsageResult,
-    campaignCountResult,
-    runningTaskResult,
-    platformCountResult,
+    dailySuccessCount,
+    dailySubmitCount,
+    campaignSuccessCount,
+    runningTaskCount,
+    platformDailySuccessCount,
   ] = await Promise.all([
-    supabase
-      .from("daily_usage")
-      .select("success_count,submit_count")
-      .eq("user_id", user.id)
-      .eq("usage_date", usageDate)
-      .maybeSingle(),
-    supabase
-      .from("generation_tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("status", "succeeded")
-      .eq("counts_quota", true)
-      .is("deleted_at", null),
-    supabase
-      .from("generation_tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .in("status", ["pending", "processing"])
-      .is("deleted_at", null),
-    supabase
-      .from("generation_tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "succeeded")
-      .eq("counts_quota", true)
-      .gte(`${"completed_at"}`, `${usageDate}T00:00:00+08:00`),
+    prisma.generationTask.count({
+      where: {
+        user_id: user.id,
+        status: "succeeded",
+        counts_quota: true,
+        completed_at: { gte: start },
+        deleted_at: null,
+      },
+    }),
+    prisma.generationTask.count({
+      where: {
+        user_id: user.id,
+        created_at: { gte: start },
+        deleted_at: null,
+      },
+    }),
+    prisma.generationTask.count({
+      where: {
+        user_id: user.id,
+        status: "succeeded",
+        counts_quota: true,
+        deleted_at: null,
+      },
+    }),
+    prisma.generationTask.count({
+      where: {
+        user_id: user.id,
+        status: { in: ["pending", "processing"] },
+        deleted_at: null,
+      },
+    }),
+    prisma.generationTask.count({
+      where: {
+        status: "succeeded",
+        counts_quota: true,
+        completed_at: { gte: start },
+      },
+    }),
   ]);
-
-  const dailySuccessCount = dailyUsageResult.data?.success_count ?? 0;
-  const dailySubmitCount = dailyUsageResult.data?.submit_count ?? 0;
-  const campaignSuccessCount = campaignCountResult.count ?? 0;
-  const platformDailySuccessCount = platformCountResult.count ?? 0;
 
   return {
     dailyLimit: limits.dailySuccessLimitPerUser,
@@ -182,7 +164,7 @@ export async function getQuotaSnapshot(
     ),
     dailySubmitLimit: limits.dailySubmitLimitPerUser,
     dailySubmitCount,
-    hasRunningTask: Boolean(runningTaskResult.count),
+    hasRunningTask: runningTaskCount > 0,
     platformDailyLimit: limits.dailyPlatformSuccessLimit,
     platformDailySuccessCount,
     platformDailyRemaining: Math.max(
@@ -248,79 +230,46 @@ export async function assertCanCreateGeneration(user: SessionUser) {
 }
 
 export async function incrementSubmitCount(userId: string) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
   const usageDate = getBeijingDate();
-  const { data } = await supabase
-    .from("daily_usage")
-    .select("submit_count")
-    .eq("user_id", userId)
-    .eq("usage_date", usageDate)
-    .maybeSingle();
-
-  await supabase.from("daily_usage").upsert(
-    {
+  await prisma.dailyUsage.upsert({
+    where: { user_id_usage_date: { user_id: userId, usage_date: usageDate } },
+    create: {
       user_id: userId,
       usage_date: usageDate,
-      submit_count: (data?.submit_count ?? 0) + 1,
-      updated_at: new Date().toISOString(),
+      submit_count: 1,
     },
-    { onConflict: "user_id,usage_date" },
-  );
+    update: {
+      submit_count: { increment: 1 },
+    },
+  });
 }
 
 export async function incrementSuccessCount(userId: string) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
   const usageDate = getBeijingDate();
-  const { data } = await supabase
-    .from("daily_usage")
-    .select("success_count")
-    .eq("user_id", userId)
-    .eq("usage_date", usageDate)
-    .maybeSingle();
-
-  await supabase.from("daily_usage").upsert(
-    {
+  await prisma.dailyUsage.upsert({
+    where: { user_id_usage_date: { user_id: userId, usage_date: usageDate } },
+    create: {
       user_id: userId,
       usage_date: usageDate,
-      success_count: (data?.success_count ?? 0) + 1,
-      updated_at: new Date().toISOString(),
+      success_count: 1,
     },
-    { onConflict: "user_id,usage_date" },
-  );
+    update: {
+      success_count: { increment: 1 },
+    },
+  });
 }
 
 export async function incrementFailedCount(userId: string) {
-  const supabase = getSupabaseAdmin();
-
-  if (!supabase) {
-    return;
-  }
-
   const usageDate = getBeijingDate();
-  const { data } = await supabase
-    .from("daily_usage")
-    .select("failed_count")
-    .eq("user_id", userId)
-    .eq("usage_date", usageDate)
-    .maybeSingle();
-
-  await supabase.from("daily_usage").upsert(
-    {
+  await prisma.dailyUsage.upsert({
+    where: { user_id_usage_date: { user_id: userId, usage_date: usageDate } },
+    create: {
       user_id: userId,
       usage_date: usageDate,
-      failed_count: (data?.failed_count ?? 0) + 1,
-      updated_at: new Date().toISOString(),
+      failed_count: 1,
     },
-    { onConflict: "user_id,usage_date" },
-  );
+    update: {
+      failed_count: { increment: 1 },
+    },
+  });
 }
