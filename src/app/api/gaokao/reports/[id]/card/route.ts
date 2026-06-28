@@ -16,11 +16,11 @@ const cardTemplatePath = path.join(
   "public/static/gaokao/gaokao-share-card-template-20260628.png",
 );
 const logoPath = path.join(process.cwd(), "public/brand/dayibin-icon.png");
-const calligraphyFontPath = path.join(
+const cardFontPath = path.join(
   process.cwd(),
-  "public/fonts/MaShanZheng-Regular.ttf",
+  "public/fonts/NotoSansCJKsc-Regular.otf",
 );
-let cachedCalligraphyFont: OpenTypeFont | null | undefined;
+let cachedCardFont: OpenTypeFont | null | undefined;
 
 function escapeXml(value: string) {
   return value
@@ -41,23 +41,23 @@ function splitLines(value: string, maxChars: number, maxLines: number) {
   return lines;
 }
 
-function getCalligraphyFont() {
-  if (cachedCalligraphyFont !== undefined) {
-    return cachedCalligraphyFont;
+function getCardFont() {
+  if (cachedCardFont !== undefined) {
+    return cachedCardFont;
   }
 
   try {
-    const buffer = readFileSync(calligraphyFontPath);
+    const buffer = readFileSync(cardFontPath);
     const fontBuffer = buffer.buffer.slice(
       buffer.byteOffset,
       buffer.byteOffset + buffer.byteLength,
     );
-    cachedCalligraphyFont = parseOpenTypeFont(fontBuffer);
+    cachedCardFont = parseOpenTypeFont(fontBuffer);
   } catch {
-    cachedCalligraphyFont = null;
+    cachedCardFont = null;
   }
 
-  return cachedCalligraphyFont;
+  return cachedCardFont;
 }
 
 function truncateText(value: string, maxChars: number) {
@@ -91,7 +91,7 @@ function renderTextLines(input: {
   return splitLines(input.value, input.maxChars, input.maxLines)
     .map(
       (line, index) =>
-        renderBrushText({
+        renderCardText({
           value: line,
           x: input.x,
           y: input.y + index * input.lineHeight,
@@ -102,7 +102,7 @@ function renderTextLines(input: {
     .join("");
 }
 
-function renderBrushText(input: {
+function renderCardText(input: {
   value: string;
   x: number;
   y: number;
@@ -110,11 +110,11 @@ function renderBrushText(input: {
   fill: string;
   maxWidth?: number;
 }) {
-  const font = getCalligraphyFont();
+  const font = getCardFont();
   const { value, x, y, fontSize, fill, maxWidth } = input;
 
   if (!font) {
-    return `<text x="${x}" y="${y}" font-family="KaiTi,serif" font-size="${fontSize}" fill="${fill}">${escapeXml(value)}</text>`;
+    return `<text x="${x}" y="${y}" font-family="Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif" font-size="${fontSize}" fill="${fill}">${escapeXml(value)}</text>`;
   }
 
   const advanceWidth = maxWidth ? font.getAdvanceWidth(value, fontSize) : 0;
@@ -135,7 +135,7 @@ function renderPlainText(input: {
   fill: string;
   weight?: number;
 }) {
-  return `<text x="${input.x}" y="${input.y}" font-family="Arial, Helvetica, sans-serif" font-size="${input.fontSize}" font-weight="${input.weight ?? 700}" letter-spacing="0" fill="${input.fill}">${escapeXml(input.value)}</text>`;
+  return renderCardText(input);
 }
 
 function recommendationLine(
@@ -205,7 +205,7 @@ function buildCardSvg(report: Awaited<ReturnType<typeof getPublicGaokaoReport>>)
   const titleName = truncateText(student.name, 8);
   const scoreText =
     student.score === null
-      ? renderBrushText({
+      ? renderCardText({
           value: "未填",
           x: 260,
           y: 305,
@@ -219,7 +219,7 @@ function buildCardSvg(report: Awaited<ReturnType<typeof getPublicGaokaoReport>>)
           y: 305,
           fontSize: 38,
           fill: "#39577d",
-        })}${renderBrushText({
+        })}${renderCardText({
           value: "分",
           x: 338,
           y: 305,
@@ -229,7 +229,7 @@ function buildCardSvg(report: Awaited<ReturnType<typeof getPublicGaokaoReport>>)
         })}`;
   const rankText =
     student.rank === null
-      ? renderBrushText({
+      ? renderCardText({
           value: "未填",
           x: 538,
           y: 305,
@@ -246,39 +246,23 @@ function buildCardSvg(report: Awaited<ReturnType<typeof getPublicGaokaoReport>>)
         });
 
   return `<svg width="900" height="1200" viewBox="0 0 900 1200" xmlns="http://www.w3.org/2000/svg">
-  ${renderBrushText({
-    value: "大宜宾志愿填报",
+  ${renderCardText({
+    value: "大宜宾志愿填报 AI 助手",
     x: 90,
     y: 120,
-    fontSize: 42,
+    fontSize: 40,
     fill: "#2e5f9e",
-    maxWidth: 350,
+    maxWidth: 520,
   })}
-  ${renderPlainText({
-    value: "AI",
-    x: 392,
-    y: 119,
-    fontSize: 38,
-    fill: "#2e5f9e",
-    weight: 800,
-  })}
-  ${renderBrushText({
-    value: "助手",
-    x: 446,
-    y: 120,
-    fontSize: 42,
-    fill: "#2e5f9e",
-    maxWidth: 100,
-  })}
-  ${renderBrushText({
-    value: `${titleName}的志愿初筛笺`,
+  ${renderCardText({
+    value: `${titleName}的志愿初筛报告`,
     x: 90,
     y: 220,
-    fontSize: 74,
+    fontSize: 68,
     fill: "#1f355f",
     maxWidth: 680,
   })}
-  ${renderBrushText({
+  ${renderCardText({
     value: student.subjectType,
     x: 96,
     y: 305,
@@ -287,7 +271,7 @@ function buildCardSvg(report: Awaited<ReturnType<typeof getPublicGaokaoReport>>)
     maxWidth: 150,
   })}
   ${scoreText}
-  ${renderBrushText({
+  ${renderCardText({
     value: "位次",
     x: 440,
     y: 305,
@@ -299,73 +283,73 @@ function buildCardSvg(report: Awaited<ReturnType<typeof getPublicGaokaoReport>>)
   ${renderTextLines({
     value: content.headline,
     x: 96,
-    y: 380,
-    fontSize: 34,
+    y: 376,
+    fontSize: 32,
     fill: "#5d708c",
-    maxChars: 22,
+    maxChars: 24,
     maxLines: 2,
-    lineHeight: 46,
+    lineHeight: 44,
   })}
   ${lines
     .map(
       ([label, labelColor, textColor, y, value]) => `
   <g>
-    ${renderBrushText({
+      ${renderCardText({
       value: label,
       x: 105,
       y,
-      fontSize: 42,
+      fontSize: 38,
       fill: labelColor,
       maxWidth: 140,
     })}
-    ${renderBrushText({
+    ${renderCardText({
       value: value.school,
       x: 275,
-      y,
-      fontSize: 43,
+      y: y + 14,
+      fontSize: 40,
       fill: textColor,
       maxWidth: 500,
     })}
-    ${renderBrushText({
+    ${renderCardText({
       value: value.major,
       x: 275,
-      y: y + 50,
-      fontSize: 33,
+      y: y + 64,
+      fontSize: 31,
       fill: textColor,
       maxWidth: 510,
     })}
-    ${renderBrushText({
+    ${renderCardText({
       value: value.suggestion,
       x: 275,
-      y: y + 90,
-      fontSize: 30,
+      y: y + 104,
+      fontSize: 28,
       fill: textColor,
       maxWidth: 510,
     })}
   </g>`,
     )
     .join("")}
-  ${renderBrushText({
+  ${renderCardText({
     value: "结果仅供参考，正式填报以官方、省考试院和高校章程为准",
     x: 104,
-    y: 1110,
-    fontSize: 24,
+    y: 1108,
+    fontSize: 23,
     fill: "#826f43",
     maxWidth: 710,
   })}
-  ${renderBrushText({
-    value: "点击查看完整报告，继续核对专业组、学费、调剂和校区",
+  ${renderCardText({
+    value: "完整报告请打开大宜宾 App 查看",
     x: 104,
-    y: 1148,
-    fontSize: 24,
+    y: 1144,
+    fontSize: 23,
     fill: "#826f43",
     maxWidth: 555,
   })}
-  ${renderBrushText({
+  ${renderCardText({
     value: "大宜宾",
     x: 710,
-    y: 1148,
-    fontSize: 32,
+    y: 1144,
+    fontSize: 30,
     fill: "#826f43",
     maxWidth: 120,
   })}
@@ -398,7 +382,7 @@ export async function GET(
     composites.push({
       input: await sharp(logoPath).resize(82, 82).png().toBuffer(),
       left: 724,
-      top: 78,
+      top: 62,
     });
   } catch {
     // Card generation still works if the logo asset is unavailable.
