@@ -29,6 +29,39 @@ function formatList(values: string[], fallback: string) {
   return values.length > 0 ? values.join("、") : fallback;
 }
 
+function formatLocationPreference(profile: GaokaoProfile) {
+  const preferred = [
+    ...profile.preferredRegions.map((region) => `${region}优先`),
+    ...profile.preferredSchoolProvinces,
+    ...profile.preferredSchoolCities,
+  ];
+  const rejected = [
+    ...profile.rejectedRegions,
+    ...profile.rejectedSchoolProvinces.map((province) => `${province}省内院校`),
+    ...profile.rejectedSchoolCities,
+  ];
+
+  return [
+    preferred.length > 0 ? `地域偏好是 ${preferred.join("、")}` : null,
+    rejected.length > 0 ? `明确排除 ${rejected.join("、")}` : null,
+    profile.distancePreference === "province_outside"
+      ? "省外优先"
+      : profile.distancePreference === "far_from_home"
+        ? "离家远一点"
+        : null,
+  ]
+    .filter(Boolean)
+    .join("，") || "地域偏好暂未明确";
+}
+
+function formatAdvisorCaseNotes(profile: GaokaoProfile) {
+  return (profile.notes ?? "")
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter((item) => /^(顾问理解|顾问表达|顾问边界|安全提醒)/.test(item))
+    .slice(-3);
+}
+
 function buildLocalAdvisorReply(input: {
   profile: GaokaoProfile;
   fallbackQuestion: string;
@@ -50,12 +83,15 @@ function buildLocalAdvisorReply(input: {
     .filter(Boolean)
     .join("，");
   const hasEnoughScoreInfo = Boolean(profile.subjectType && (profile.rank || profile.score));
+  const advisorCaseNotes = formatAdvisorCaseNotes(profile);
 
   return [
     `我先确认一下：${confirmed || "基础信息还没补齐"}。这些会直接进入后面的志愿初筛报告。`,
     hasEnoughScoreInfo
       ? `接下来会以四川${profile.subjectType ?? ""}${profile.rank ? "、系统定位的位次" : ""}为主线看冲稳保。专业偏好是 ${formatList(profile.preferredMajors, "暂未明确")}，城市偏好是 ${formatList(profile.preferredCities, "暂未明确")}，这些会影响排序，但不会替代位次判断。`
       : "志愿初筛最怕关键硬信息缺一块：科类、位次、分数至少要先对齐，后面谈专业和城市才不跑偏。",
+    `我对地域的理解：${formatLocationPreference(profile)}。如果是硬排除，后面不会为了凑数量偷偷放回去。`,
+    ...advisorCaseNotes,
     `风险上先记住三件事：民办、中外合作和调剂范围要提前确认；冲档不能当稳档；2026 录取结果还没产生，不能把历史投档当成承诺。`,
     input.fallbackQuestion,
   ].join("\n\n");
@@ -135,7 +171,7 @@ export async function generateGaokaoAssistantReply(input: {
     {
       role: "system",
       content: [
-        "你是大宜宾高考填报 AI 助手，只服务四川考生。语气专业、清楚、略幽默。每次回复先确认用户刚补充的信息，再给 2-4 段具体分析，最后只问一个关键问题或提示可以生成报告。你只能追问或解释用户画像，不能编造学校、分数线、录取概率。",
+        "你是大宜宾高考填报 AI 助手，只服务四川考生。语气要直给、专业、就业导向，不绕弯，不营销。每次回复先确认用户刚补充的信息，再给 2-4 段具体分析，最后只问一个关键问题或提示可以生成报告。聊天阶段只能解释画像、约束、专业思路和取舍，不允许点名具体学校或专业组；正式学校名单只能由推荐接口根据数据库返回。不能编造学校、分数线、录取概率，不能承诺录取或就业。不要提及任何外部个人姓名。用户说远离四川、离家远、远离原生家庭时，要复述为学校所在地约束；用户说东北优先时，只能当地域偏好，除非他说只看或必须。",
         "回复必须是纯中文自然段落，不使用 Markdown 标题、加粗、分隔线、表格或项目符号。",
         gaokaoBusinessFacts,
       ].join("\n"),

@@ -1,13 +1,11 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getPublicGaokaoReport } from "@/features/gaokao/gaokao-repository";
-import { GaokaoReportView } from "@/features/gaokao/gaokao-report-view";
 import { verifyResultShareToken } from "@/lib/auth/result-share-token";
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ s?: string }>;
+  searchParams: Promise<{ s?: string | string[] }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -19,7 +17,8 @@ const dayibinAppUrl =
 
 export default async function GaokaoSharePage({ params, searchParams }: Props) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const token = query.s;
+  const rawToken = query.s;
+  const token = Array.isArray(rawToken) ? rawToken[0] : rawToken;
 
   if (!token || !verifyResultShareToken(token, "gaokao", id)) {
     notFound();
@@ -32,39 +31,26 @@ export default async function GaokaoSharePage({ params, searchParams }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8f5] px-4 py-6 text-[#1f2523]">
-      <article className="mx-auto w-full max-w-4xl">
-        <header className="border-b border-black/8 pb-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7a6a3a]">
-            大宜宾高考填报 AI 助手
-          </p>
-          <h1 className="mt-2 text-2xl font-black tracking-normal">
-            {report.title}
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-[#667064]">
-            这是一份基于四川历史投档数据和 AI 解读生成的志愿初筛报告，仅供参考。
-          </p>
-        </header>
-
-        <div className="mt-4">
-          <GaokaoReportView
-            summary={report.summary}
-            profile={report.profile}
-            recommendations={report.recommendations}
-          />
-        </div>
-
-        <section className="mt-4 rounded-[8px] bg-[#1f2523] p-4 text-white">
-          <h2 className="text-base font-black">打开大宜宾 App 继续测</h2>
+    <main className="min-h-screen bg-[#f7f8f5] px-4 py-5 text-[#1f2523]">
+      <article className="mx-auto flex w-full max-w-[430px] flex-col items-center">
+        <h1 className="sr-only">{report.title}</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={report.shareImageUrl}
+          alt={`${report.title}分享卡片`}
+          className="block w-full rounded-[8px] bg-white shadow-[0_18px_48px_rgba(31,37,35,0.12)]"
+        />
+        <section className="mt-4 w-full rounded-[8px] bg-[#1f2523] p-4 text-white">
+          <h2 className="text-base font-black">打开大宜宾 App 查看完整报告</h2>
           <p className="mt-2 text-sm leading-6 text-white/78">
-            查看完整报告后，可以在大宜宾 App 内继续生成自己的志愿初筛。
+            微信内先展示分享卡片。完整冲稳保明细、专业取舍和风险提醒，请在 App 内查看。
           </p>
-          <Link
+          <a
             href={dayibinAppUrl}
             className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-[8px] bg-white px-4 text-sm font-black text-[#1f2523]"
           >
             打开大宜宾 App
-          </Link>
+          </a>
         </section>
       </article>
     </main>

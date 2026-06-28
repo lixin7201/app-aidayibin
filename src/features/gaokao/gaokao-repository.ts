@@ -11,6 +11,7 @@ import type {
   GaokaoReportListItem,
   GaokaoSubjectType,
 } from "@/features/gaokao/types";
+import { getGaokaoRegionProvinces } from "@/features/gaokao/gaokao-profile";
 import { createEmptyGaokaoProfile } from "@/features/gaokao/types";
 import { signResultShareToken } from "@/lib/auth/result-share-token";
 import { config } from "@/lib/config";
@@ -69,7 +70,12 @@ function mapItem(
   const groupNote = record.major_name?.includes("专业组")
     ? "组内具体专业需以 2026 招生计划核对。"
     : "";
-  const reason = [relaxedNote, baseReason, groupNote].filter(Boolean).join("");
+  const locationLabel = formatSchoolLocation(record);
+  const locationNote = locationLabel ? `学校所在地：${locationLabel}。` : "";
+  const locationFitNote = buildLocationFitReason(record, profile);
+  const reason = [relaxedNote, baseReason, locationNote, locationFitNote, groupNote]
+    .filter(Boolean)
+    .join("");
 
   return {
     id: record.id,
@@ -84,6 +90,8 @@ function mapItem(
     rankGap,
     riskLabel,
     reason,
+    schoolProvince: record.schoolProvince ?? null,
+    schoolCity: record.schoolCity ?? null,
   };
 }
 
@@ -97,6 +105,10 @@ type AdmissionRecord = {
   score: number | null;
   rank: number | null;
   quota: number | null;
+  schoolProvince?: string | null;
+  schoolCity?: string | null;
+  schoolOwnership?: string | null;
+  schoolType?: string | null;
 };
 
 type ScoredAdmissionRecord = AdmissionRecord & {
@@ -104,6 +116,7 @@ type ScoredAdmissionRecord = AdmissionRecord & {
 };
 
 type MajorPlanRow = {
+  school_name?: string;
   plan_type?: string | null;
   major_full_name?: string | null;
   major_name: string;
@@ -130,6 +143,13 @@ type MajorPlanRow = {
   school_city: string | null;
   school_province: string | null;
   ownership: string | null;
+};
+
+type SchoolLocation = {
+  schoolProvince?: string | null;
+  schoolCity?: string | null;
+  schoolOwnership?: string | null;
+  schoolType?: string | null;
 };
 
 type MajorPlanDelegate = {
@@ -196,6 +216,219 @@ function extractGroupCode(value: string | null) {
   );
 }
 
+function getRegionProvinces(regions: string[]) {
+  return Array.from(new Set(regions.flatMap(getGaokaoRegionProvinces)));
+}
+
+function locationMatchesRegions(province: string | null | undefined, regions: string[]) {
+  return Boolean(province && getRegionProvinces(regions).includes(province));
+}
+
+function hasHardLocationRule(profile: GaokaoProfile) {
+  return Boolean(
+    profile.rejectedSchoolProvinces.length ||
+      profile.rejectedSchoolCities.length ||
+      profile.rejectedRegions.length ||
+      (profile.locationStrictness === "hard" &&
+        (profile.distancePreference === "province_outside" ||
+          profile.distancePreference === "far_from_home" ||
+          profile.distancePreference === "near_home")) ||
+      (profile.locationStrictness === "hard" &&
+        (profile.preferredRegions.length ||
+          profile.preferredSchoolProvinces.length ||
+          profile.preferredSchoolCities.length)),
+  );
+}
+
+function isLocationRejected(location: SchoolLocation, profile: GaokaoProfile) {
+  const province = location.schoolProvince;
+  const city = location.schoolCity;
+
+  if (!province && !city) {
+    return hasHardLocationRule(profile);
+  }
+
+  if (province && profile.rejectedSchoolProvinces.includes(province)) {
+    return true;
+  }
+
+  if (city && profile.rejectedSchoolCities.includes(city)) {
+    return true;
+  }
+
+  if (locationMatchesRegions(province, profile.rejectedRegions)) {
+    return true;
+  }
+
+  if (
+    profile.locationStrictness === "hard" &&
+    (profile.distancePreference === "province_outside" ||
+      profile.distancePreference === "far_from_home") &&
+    province === profile.province
+  ) {
+    return true;
+  }
+
+  if (
+    profile.locationStrictness === "hard" &&
+    profile.distancePreference === "near_home" &&
+    province &&
+    province !== profile.province
+  ) {
+    return true;
+  }
+
+  if (profile.locationStrictness !== "hard") {
+    return false;
+  }
+
+  const preferredProvinces = Array.from(
+    new Set([
+      ...profile.preferredSchoolProvinces,
+      ...getRegionProvinces(profile.preferredRegions),
+    ]),
+  );
+  const hasPreferredLocation = Boolean(
+    preferredProvinces.length || profile.preferredSchoolCities.length,
+  );
+
+  if (!hasPreferredLocation) {
+    return false;
+  }
+
+  return !(
+    (province && preferredProvinces.includes(province)) ||
+    (city && profile.preferredSchoolCities.includes(city))
+  );
+}
+
+function scoreLocation(location: SchoolLocation, profile: GaokaoProfile) {
+  const province = location.schoolProvince;
+  const city = location.schoolCity;
+  let score = 0;
+
+  if (city && profile.preferredSchoolCities.includes(city)) {
+    score += 80;
+  }
+
+  if (province && profile.preferredSchoolProvinces.includes(province)) {
+    score += 60;
+  }
+
+  if (locationMatchesRegions(province, profile.preferredRegions)) {
+    score += 55;
+  }
+
+  if (
+    (profile.distancePreference === "province_outside" ||
+      profile.distancePreference === "far_from_home") &&
+    province &&
+    province !== profile.province
+  ) {
+    score += 25;
+  }
+
+  if (profile.distancePreference === "near_home" && province === profile.province) {
+    score += 25;
+  }
+
+  return score;
+}
+
+function formatSchoolLocation(location: SchoolLocation) {
+  const province = location.schoolProvince;
+  const city = location.schoolCity;
+
+  if (!province) {
+    return city ?? "";
+  }
+
+  if (!city || city === province || city.startsWith(province)) {
+    return province;
+  }
+
+  return `${province}${city}`;
+}
+
+function buildLocationFitReason(location: SchoolLocation, profile: GaokaoProfile) {
+  const province = location.schoolProvince;
+  const city = location.schoolCity;
+  const matchedRegion = profile.preferredRegions.find((region) =>
+    locationMatchesRegions(province, [region]),
+  );
+
+  if (
+    province &&
+    province !== profile.province &&
+    (profile.rejectedSchoolProvinces.includes(profile.province) ||
+      profile.distancePreference === "province_outside" ||
+      profile.distancePreference === "far_from_home")
+  ) {
+    return "符合省外院校要求。";
+  }
+
+  if (matchedRegion) {
+    return `符合地域偏好：${matchedRegion}。`;
+  }
+
+  if (city && profile.preferredSchoolCities.includes(city)) {
+    return `符合城市偏好：${city}。`;
+  }
+
+  if (province && profile.preferredSchoolProvinces.includes(province)) {
+    return `符合省份偏好：${province}。`;
+  }
+
+  return "";
+}
+
+async function attachAdmissionLocations(
+  rows: AdmissionRecord[],
+  profile: GaokaoProfile,
+) {
+  const majorPlan = getMajorPlanDelegate();
+
+  if (!majorPlan || rows.length === 0) {
+    return rows;
+  }
+
+  const schoolNames = Array.from(new Set(rows.map((row) => row.school_name)));
+
+  try {
+    const planRows = await majorPlan.findMany({
+      where: {
+        year: 2026,
+        province: "四川",
+        subject_type: profile.subjectType ?? undefined,
+        school_name: { in: schoolNames },
+      },
+      orderBy: [{ plan_count: "desc" }],
+      take: schoolNames.length * 20,
+    });
+    const locations = new Map<string, SchoolLocation>();
+
+    for (const row of planRows) {
+      if (!row.school_name || locations.has(row.school_name)) {
+        continue;
+      }
+
+      locations.set(row.school_name, {
+        schoolProvince: row.school_province,
+        schoolCity: row.school_city,
+        schoolOwnership: row.ownership,
+        schoolType: row.school_type,
+      });
+    }
+
+    return rows.map((row) => ({
+      ...row,
+      ...locations.get(row.school_name),
+    }));
+  } catch {
+    return rows;
+  }
+}
+
 function getMajorPlanText(row: MajorPlanRow) {
   return [
     row.plan_type,
@@ -249,6 +482,15 @@ function isMajorPlanRejected(row: MajorPlanRow, profile: GaokaoProfile) {
     return true;
   }
 
+  if (
+    isLocationRejected(
+      { schoolProvince: row.school_province, schoolCity: row.school_city },
+      profile,
+    )
+  ) {
+    return true;
+  }
+
   if (profile.tuitionLimit && row.tuition && row.tuition > profile.tuitionLimit) {
     return true;
   }
@@ -280,6 +522,11 @@ function scoreMajorPlan(row: MajorPlanRow, profile: GaokaoProfile) {
   ) {
     score += 30;
   }
+
+  score += scoreLocation(
+    { schoolProvince: row.school_province, schoolCity: row.school_city },
+    profile,
+  );
 
   if (profile.rank && rank) {
     const distance = Math.abs(rank - profile.rank);
@@ -458,11 +705,20 @@ function isHardRejected(record: AdmissionRecord, profile: GaokaoProfile) {
     return true;
   }
 
+  if (isLocationRejected(record, profile)) {
+    return true;
+  }
+
   if (profile.acceptSinoForeign === false && /中外|合作办学/.test(text)) {
     return true;
   }
 
-  if (profile.acceptPrivate === false && /民办/.test(text)) {
+  if (
+    profile.acceptPrivate === false &&
+    (/民办|独立学院/.test(text) ||
+      /民办|独立学院/.test(record.schoolOwnership ?? "") ||
+      /民办|独立学院/.test(record.schoolType ?? ""))
+  ) {
     return true;
   }
 
@@ -490,6 +746,8 @@ function scoreRecord(input: {
   if (profile.preferredCities.some((keyword) => text.includes(keyword))) {
     score += 60;
   }
+
+  score += scoreLocation(record, profile);
 
   if (input.centerRank && record.rank) {
     const distance = Math.abs(record.rank - input.centerRank);
@@ -536,6 +794,10 @@ function pickPreferredRecords(input: {
       score: record.score,
       rank: record.rank,
       quota: record.quota,
+      schoolProvince: record.schoolProvince,
+      schoolCity: record.schoolCity,
+      schoolOwnership: record.schoolOwnership,
+      schoolType: record.schoolType,
       relaxedRange: record.relaxedRange,
     }));
 }
@@ -570,8 +832,9 @@ async function findRankRecords(input: {
       orderBy: [{ year: "desc" }, { rank: "asc" }],
       take: input.take * 10,
     });
+    const rowsWithLocation = await attachAdmissionLocations(rows, input.profile);
     const picked = pickPreferredRecords({
-      rows,
+      rows: rowsWithLocation,
       profile: input.profile,
       take: input.take,
       centerRank,
@@ -622,8 +885,9 @@ async function findScoreRecords(input: {
       orderBy: [{ year: "desc" }, { score: input.direction }],
       take: input.take * 10,
     });
+    const rowsWithLocation = await attachAdmissionLocations(rows, input.profile);
     const picked = pickPreferredRecords({
-      rows,
+      rows: rowsWithLocation,
       profile: input.profile,
       take: input.take,
       centerRank: null,

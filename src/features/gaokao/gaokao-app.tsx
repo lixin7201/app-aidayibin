@@ -110,6 +110,7 @@ function formatProfile(profile: GaokaoProfile) {
     profile.preferredCities.length > 0
       ? `城市 ${profile.preferredCities.join("、")}`
       : null,
+    formatProfileLocation(profile),
     profile.acceptPrivate === false ? "不读民办" : null,
     profile.acceptSinoForeign === false ? "不读中外" : null,
     profile.acceptAdjustment === true ? "可调剂" : null,
@@ -117,6 +118,69 @@ function formatProfile(profile: GaokaoProfile) {
   ]
     .filter(Boolean)
     .join(" / ");
+}
+
+function formatProfileLocation(profile: GaokaoProfile) {
+  const preferred = [
+    ...profile.preferredRegions.map((region) => `${region}优先`),
+    ...profile.preferredSchoolProvinces,
+    ...profile.preferredSchoolCities,
+  ];
+  const rejected = [
+    ...profile.rejectedRegions,
+    ...profile.rejectedSchoolProvinces.map((province) => `${province}省内`),
+    ...profile.rejectedSchoolCities,
+  ];
+
+  if (rejected.length > 0) {
+    return `排除 ${rejected.join("、")}`;
+  }
+
+  if (preferred.length > 0) {
+    return `地域 ${preferred.join("、")}`;
+  }
+
+  if (profile.distancePreference === "province_outside") {
+    return "省外优先";
+  }
+
+  if (profile.distancePreference === "far_from_home") {
+    return "离家远";
+  }
+
+  return null;
+}
+
+function buildAdvisorConfirmItems(profile: GaokaoProfile) {
+  const items = [
+    profile.subjectType
+      ? `硬信息：四川${profile.subjectType}${profile.score ? `，${profile.score} 分` : ""}${profile.rank ? `，位次 ${profile.rank}` : ""}`
+      : null,
+    profile.preferredMajors.length > 0
+      ? `专业偏好：${profile.preferredMajors.join("、")}`
+      : null,
+    profile.rejectedMajors.length > 0
+      ? `明确不读：${profile.rejectedMajors.join("、")}`
+      : null,
+    profile.preferredRegions.length > 0
+      ? `地域偏好：${profile.preferredRegions.join("、")}优先`
+      : null,
+    profile.preferredSchoolCities.length > 0
+      ? `城市偏好：${profile.preferredSchoolCities.join("、")}`
+      : null,
+    profile.rejectedSchoolProvinces.length > 0
+      ? `明确排除：${profile.rejectedSchoolProvinces.join("、")}省内院校`
+      : null,
+    profile.distancePreference === "province_outside"
+      ? "距离诉求：省外优先"
+      : profile.distancePreference === "far_from_home"
+        ? "距离诉求：离家远一点"
+        : null,
+    profile.acceptPrivate === false ? "明确排除：民办" : null,
+    profile.acceptSinoForeign === false ? "明确排除：中外合作" : null,
+  ];
+
+  return items.filter((item): item is string => Boolean(item));
 }
 
 function hasRequiredProfile(profile: GaokaoProfile) {
@@ -385,7 +449,7 @@ export function GaokaoAssistantApp({
   async function shareReport(report: GaokaoReportListItem) {
     await shareImage({
       title: "我用大宜宾 AI 做了一份高考志愿初筛",
-      description: "点击查看完整报告，也可以打开大宜宾 App 继续测一份。",
+      description: "点击查看分享卡片，完整报告请打开大宜宾 App。",
       imageUrl: report.shareImageUrl,
       pageUrl: report.sharePageUrl,
     });
@@ -498,7 +562,7 @@ export function GaokaoAssistantApp({
               ) : (
                 <Sparkles size={18} />
               )}
-              {isGenerating ? "正在分析" : "开始智能分析"}
+              {isGenerating ? "正在分析" : "按以上条件开始分析"}
             </button>
           </>
         )}
@@ -843,6 +907,7 @@ function AdvisorPanel({
   onSend: () => void;
 }) {
   const visibleChat = chat.slice(-8);
+  const confirmItems = buildAdvisorConfirmItems(profile);
 
   return (
     <aside className="mt-3 rounded-[8px] bg-white p-4 shadow-[0_10px_28px_rgba(20,83,180,0.08)]">
@@ -862,6 +927,19 @@ function AdvisorPanel({
         {formatProfile(profile) || "先把考生信息补齐。"}
       </p>
 
+      {confirmItems.length > 0 ? (
+        <div className="mt-3 border-t border-[#eef2f7] pt-3">
+          <p className="text-xs font-black text-[#101828]">按以上条件分析</p>
+          <ul className="mt-2 space-y-1 text-xs leading-5 text-[#475467]">
+            {confirmItems.map((item) => (
+              <li key={item} className="break-words">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
         {visibleChat.map((item, index) => (
           <ChatMessageBubble
@@ -875,7 +953,7 @@ function AdvisorPanel({
         <textarea
           value={message}
           onChange={(event) => onMessage(event.target.value)}
-          placeholder="补充偏好：如成都重庆优先，计算机方向，不想读民办。"
+          placeholder="补充偏好：如远离四川、东北优先，计算机方向，不想读民办。"
           className="min-h-16 flex-1 resize-none rounded-[8px] border border-[#dfe6f0] bg-white px-3 py-2 text-sm leading-5 text-[#101828] outline-none focus:border-[#1769e8] disabled:bg-[#f4f6f9]"
           disabled={!canGenerate || isChatting}
         />

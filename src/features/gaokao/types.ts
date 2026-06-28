@@ -6,6 +6,13 @@ export type GaokaoFirstChoiceSubject = "物理" | "历史";
 
 export type GaokaoOptionalSubject = "化学" | "生物" | "思想政治" | "地理";
 
+export type GaokaoDistancePreference =
+  | "near_home"
+  | "far_from_home"
+  | "province_outside";
+
+export type GaokaoLocationStrictness = "hard" | "soft";
+
 export type GaokaoProfile = {
   province: "四川";
   examYear: 2026;
@@ -20,6 +27,14 @@ export type GaokaoProfile = {
   rejectedMajors: string[];
   preferredCities: string[];
   rejectedCities: string[];
+  preferredRegions: string[];
+  rejectedRegions: string[];
+  preferredSchoolProvinces: string[];
+  rejectedSchoolProvinces: string[];
+  preferredSchoolCities: string[];
+  rejectedSchoolCities: string[];
+  distancePreference: GaokaoDistancePreference | null;
+  locationStrictness: GaokaoLocationStrictness;
   riskPreference: GaokaoRiskPreference;
   tuitionLimit: number | null;
   acceptPrivate: boolean | null;
@@ -41,6 +56,8 @@ export type GaokaoRecommendationItem = {
   rankGap: number | null;
   riskLabel: string;
   reason: string;
+  schoolProvince?: string | null;
+  schoolCity?: string | null;
   majorSuggestions?: GaokaoMajorSuggestion[];
 };
 
@@ -110,6 +127,14 @@ export function createEmptyGaokaoProfile(): GaokaoProfile {
     rejectedMajors: [],
     preferredCities: [],
     rejectedCities: [],
+    preferredRegions: [],
+    rejectedRegions: [],
+    preferredSchoolProvinces: [],
+    rejectedSchoolProvinces: [],
+    preferredSchoolCities: [],
+    rejectedSchoolCities: [],
+    distancePreference: null,
+    locationStrictness: "soft",
     riskPreference: "balanced",
     tuitionLimit: null,
     acceptPrivate: null,

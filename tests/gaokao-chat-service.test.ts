@@ -80,6 +80,10 @@ describe("gaokao chat service", () => {
         rank: 1,
         subjectType: "历史类",
         preferredCities: ["重庆"],
+        preferredRegions: ["东北"],
+        rejectedSchoolProvinces: ["四川"],
+        distancePreference: "province_outside",
+        locationStrictness: "hard",
         preferredMajors: ["计算机"],
         acceptPrivate: false,
         notes: "**不读民办**",
@@ -97,6 +101,10 @@ describe("gaokao chat service", () => {
     expect(result.profile.preferredCities).toEqual(
       expect.arrayContaining(["成都", "重庆"]),
     );
+    expect(result.profile.preferredRegions).toContain("东北");
+    expect(result.profile.rejectedSchoolProvinces).toContain("四川");
+    expect(result.profile.distancePreference).toBe("province_outside");
+    expect(result.profile.locationStrictness).toBe("hard");
     expect(result.profile.preferredMajors).toContain("计算机");
     expect(result.profile.acceptPrivate).toBe(false);
     expect(result.assistantMessage).not.toContain("###");

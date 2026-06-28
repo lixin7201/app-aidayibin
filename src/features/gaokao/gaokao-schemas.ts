@@ -16,6 +16,17 @@ export const gaokaoProfileSchema = z.object({
   rejectedMajors: z.array(z.string().trim().min(1).max(40)).default([]),
   preferredCities: z.array(z.string().trim().min(1).max(40)).default([]),
   rejectedCities: z.array(z.string().trim().min(1).max(40)).default([]),
+  preferredRegions: z.array(z.string().trim().min(1).max(40)).default([]),
+  rejectedRegions: z.array(z.string().trim().min(1).max(40)).default([]),
+  preferredSchoolProvinces: z.array(z.string().trim().min(1).max(40)).default([]),
+  rejectedSchoolProvinces: z.array(z.string().trim().min(1).max(40)).default([]),
+  preferredSchoolCities: z.array(z.string().trim().min(1).max(40)).default([]),
+  rejectedSchoolCities: z.array(z.string().trim().min(1).max(40)).default([]),
+  distancePreference: z
+    .enum(["near_home", "far_from_home", "province_outside"])
+    .nullable()
+    .default(null),
+  locationStrictness: z.enum(["hard", "soft"]).default("soft"),
   riskPreference: z.enum(["aggressive", "balanced", "safe"]).default("balanced"),
   tuitionLimit: z.number().int().min(0).max(500_000).nullable().default(null),
   acceptPrivate: z.boolean().nullable().default(null),
@@ -46,6 +57,8 @@ const gaokaoRecommendationItemSchema = z.object({
   rankGap: z.number().int().nullable(),
   riskLabel: z.string().min(1),
   reason: z.string().min(1),
+  schoolProvince: z.string().nullable().optional(),
+  schoolCity: z.string().nullable().optional(),
   majorSuggestions: z
     .array(
       z.object({

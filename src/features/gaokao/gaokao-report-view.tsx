@@ -51,12 +51,29 @@ function formatMajorMeta(
     .join(" / ");
 }
 
+function formatSchoolLocation(item: GaokaoRecommendationItem) {
+  if (!item.schoolProvince) {
+    return item.schoolCity ?? null;
+  }
+
+  if (
+    !item.schoolCity ||
+    item.schoolCity === item.schoolProvince ||
+    item.schoolCity.startsWith(item.schoolProvince)
+  ) {
+    return item.schoolProvince;
+  }
+
+  return `${item.schoolProvince}${item.schoolCity}`;
+}
+
 function RecommendationItemCard({ item }: { item: GaokaoRecommendationItem }) {
   const majorSuggestions = item.majorSuggestions?.slice(0, 2) ?? [];
   const hiddenMajorCount = Math.max(
     0,
     (item.majorSuggestions?.length ?? 0) - majorSuggestions.length,
   );
+  const schoolLocation = formatSchoolLocation(item);
 
   return (
     <article className="rounded-[8px] border border-black/8 bg-white p-3">
@@ -77,7 +94,7 @@ function RecommendationItemCard({ item }: { item: GaokaoRecommendationItem }) {
         <span>{item.year} 年</span>
         <span>{item.score ? `${item.score} 分` : "分数缺失"}</span>
         <span>{item.rank ? `位次 ${item.rank}` : "位次缺失"}</span>
-        <span>{formatRankGap(item.rankGap)}</span>
+        <span>{schoolLocation ?? formatRankGap(item.rankGap)}</span>
       </div>
       <p className="mt-2 break-words text-xs leading-5 text-[#485247]">
         {formatRankGap(item.rankGap)}。{item.reason}

@@ -62,10 +62,51 @@ function formatAcceptance(value: boolean | null, label: string) {
   return `${label}未明确`;
 }
 
+function formatDistancePreference(profile: GaokaoProfile) {
+  if (profile.distancePreference === "province_outside") {
+    return "省外优先";
+  }
+
+  if (profile.distancePreference === "far_from_home") {
+    return "离家远一点";
+  }
+
+  if (profile.distancePreference === "near_home") {
+    return "离家近一点";
+  }
+
+  return "未明确";
+}
+
+function hasLocationPreference(profile: GaokaoProfile) {
+  return Boolean(
+    profile.preferredRegions.length ||
+      profile.rejectedRegions.length ||
+      profile.preferredSchoolProvinces.length ||
+      profile.rejectedSchoolProvinces.length ||
+      profile.preferredSchoolCities.length ||
+      profile.rejectedSchoolCities.length ||
+      profile.distancePreference,
+  );
+}
+
+function formatRejectedSchoolLocations(profile: GaokaoProfile) {
+  return [
+    ...profile.rejectedRegions.map((region) => `${region}地区`),
+    ...profile.rejectedSchoolProvinces.map((province) => `${province}省内院校`),
+    ...profile.rejectedSchoolCities.map((city) => `${city}院校`),
+  ];
+}
+
 function splitNotes(notes: string | null) {
   return (notes ?? "")
     .split(/\n+/)
     .map((item) => cleanLegacyMarkdown(item))
+    .map((item) =>
+      item
+        .replace(/张雪峰|张老师|峰哥/g, "直给顾问口吻")
+        .replace(/保证录取|包录取|100%|百分百|一定能上/g, "录取承诺"),
+    )
     .filter(Boolean)
     .slice(-4);
 }
@@ -125,6 +166,12 @@ export function buildGaokaoReportContent(input: {
     advisorReferences: [
       `专业偏好：${formatList(profile.preferredMajors)}；明确不想读：${formatList(profile.rejectedMajors)}。`,
       `城市偏好：${formatList(profile.preferredCities)}；明确不想去：${formatList(profile.rejectedCities)}。`,
+      `学校所在地偏好：${formatList([
+        ...profile.preferredRegions.map((region) => `${region}优先`),
+        ...profile.preferredSchoolProvinces,
+        ...profile.preferredSchoolCities,
+      ])}；距离诉求：${formatDistancePreference(profile)}。`,
+      `所在地明确排除：${formatList(formatRejectedSchoolLocations(profile))}；地域约束强度：${profile.locationStrictness === "hard" ? "硬约束" : "软偏好"}。`,
       `学费预算：${profile.tuitionLimit ? `每年约 ${profile.tuitionLimit} 元以内` : "未明确"}。`,
       ...advisorNotes.map((note) => `顾问提醒：${note}`),
     ],
@@ -135,6 +182,9 @@ export function buildGaokaoReportContent(input: {
       profile.preferredCities.length > 0
         ? `城市偏好会影响生活成本和实习机会，但不能把位次明显不匹配的学校硬拉进稳档。`
         : "城市暂未明确时，先按位次和专业匹配做大池子，再做地域取舍。",
+      hasLocationPreference(profile)
+        ? `本轮会先处理学校所在地限制：硬约束直接排除，${formatList(profile.preferredRegions, "地域软偏好")}只参与排序和解释。`
+        : "若有明确不想去的省份或城市，建议在生成前说清楚，避免报告只按位次排序。",
       `冲档看学校和专业上限，稳档看匹配度，保底看是否真能接受，三档不要互相替代。`,
     ],
     conditionRisks: [
@@ -151,6 +201,9 @@ export function buildGaokaoReportContent(input: {
       input.dataStatus?.missingSichuanData
         ? "四川历史投档数据未导入前，不应编造学校名单。"
         : "本轮候选来自已导入的四川历史投档数据。",
+      hasLocationPreference(profile)
+        ? "学校所在地优先使用 2026 招生计划中的结构化省市字段；硬排除条件不用于凑数放宽。"
+        : "学校所在地未设硬约束时，系统不会仅凭聊天情绪强行排除省份。",
       "2026 四川成绩和位次已发布，但 2026 录取结果尚未产生；本报告只能参考 2025/2024 等历史投档和 2026 招生计划。",
       "AI 不承诺录取概率，不新增数据库以外的学校名单。",
       "专业偏好只参与排序，不会把位次匹配的候选一刀切删空。",

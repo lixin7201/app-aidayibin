@@ -43,6 +43,39 @@ const records = [
     quota: 24,
   },
   {
+    id: "northeast-chong",
+    school_name: "东北大学",
+    major_name: "专业组103（选科：不限）",
+    year: 2025,
+    subject_type: "物理类",
+    batch: "本科批",
+    score: 626,
+    rank: 11500,
+    quota: 10,
+  },
+  {
+    id: "northeast-wen",
+    school_name: "哈尔滨工程大学",
+    major_name: "专业组104（选科：不限）",
+    year: 2025,
+    subject_type: "物理类",
+    batch: "本科批",
+    score: 616,
+    rank: 13000,
+    quota: 14,
+  },
+  {
+    id: "private-wen",
+    school_name: "吉林师范大学博达学院",
+    major_name: "专业组105（选科：不限）",
+    year: 2025,
+    subject_type: "物理类",
+    batch: "本科批",
+    score: 615,
+    rank: 13100,
+    quota: 20,
+  },
+  {
     id: "group-bao",
     school_name: "西华大学",
     major_name: "专业组205（选科：不限）",
@@ -77,6 +110,25 @@ const records = [
   },
 ];
 
+const schoolLocations: Record<
+  string,
+  {
+    school_city: string;
+    school_province: string;
+    ownership: string;
+    school_type: string;
+  }
+> = {
+  四川大学: { school_city: "成都", school_province: "四川", ownership: "公办", school_type: "综合" },
+  成都信息工程大学: { school_city: "成都", school_province: "四川", ownership: "公办", school_type: "理工" },
+  东北大学: { school_city: "沈阳", school_province: "辽宁", ownership: "公办", school_type: "理工" },
+  哈尔滨工程大学: { school_city: "哈尔滨", school_province: "黑龙江", ownership: "公办", school_type: "理工" },
+  吉林师范大学博达学院: { school_city: "四平", school_province: "吉林", ownership: "民办", school_type: "独立学院" },
+  西华大学: { school_city: "成都", school_province: "四川", ownership: "公办", school_type: "综合" },
+  西北农林科技大学: { school_city: "杨凌", school_province: "陕西", ownership: "公办", school_type: "农林" },
+  北京大学: { school_city: "北京", school_province: "北京", ownership: "公办", school_type: "综合" },
+};
+
 describe("gaokao recommendations", () => {
   beforeEach(() => {
     mocks.admissionFindMany.mockReset();
@@ -91,7 +143,20 @@ describe("gaokao recommendations", () => {
         );
       }),
     );
-    mocks.majorPlanFindMany.mockResolvedValue([]);
+    mocks.majorPlanFindMany.mockImplementation((query) => {
+      const schoolName = query.where.school_name;
+
+      if (schoolName && typeof schoolName === "object" && "in" in schoolName) {
+        return schoolName.in
+          .map((name: string) => ({
+            school_name: name,
+            ...schoolLocations[name],
+          }))
+          .filter((row: { school_province?: string }) => row.school_province);
+      }
+
+      return [];
+    });
   });
 
   it("does not hard-filter major group rows when preferred majors miss", async () => {
@@ -215,6 +280,91 @@ describe("gaokao recommendations", () => {
     const recommendations = await buildGaokaoRecommendations(profile);
 
     expect(recommendations.bao.map((item) => item.id)).not.toContain("group-bio");
+  });
+
+  it("hard-filters schools in rejected school provinces", async () => {
+    const profile = {
+      ...createEmptyGaokaoProfile(),
+      studentName: "李同学",
+      firstChoiceSubject: "物理" as const,
+      subjectType: "物理类" as const,
+      score: 620,
+      rank: 12000,
+      rejectedSchoolProvinces: ["四川"],
+      distancePreference: "far_from_home" as const,
+      locationStrictness: "hard" as const,
+    };
+
+    const recommendations = await buildGaokaoRecommendations(profile);
+    const items = Object.values(recommendations).flat();
+
+    expect(items.map((item) => item.schoolName)).not.toEqual(
+      expect.arrayContaining(["四川大学", "成都信息工程大学", "西华大学"]),
+    );
+    expect(items.every((item) => item.schoolProvince !== "四川")).toBe(true);
+    expect(items.map((item) => item.schoolName)).toEqual(
+      expect.arrayContaining(["东北大学", "哈尔滨工程大学", "西北农林科技大学"]),
+    );
+  });
+
+  it("hard-filters private or independent colleges using official plan ownership", async () => {
+    const profile = {
+      ...createEmptyGaokaoProfile(),
+      studentName: "李同学",
+      firstChoiceSubject: "物理" as const,
+      subjectType: "物理类" as const,
+      score: 620,
+      rank: 12000,
+      acceptPrivate: false,
+    };
+
+    const recommendations = await buildGaokaoRecommendations(profile);
+    const items = Object.values(recommendations).flat();
+
+    expect(items.map((item) => item.id)).not.toContain("private-wen");
+  });
+
+  it("keeps only northeast schools when northeast is a hard location constraint", async () => {
+    const profile = {
+      ...createEmptyGaokaoProfile(),
+      studentName: "李同学",
+      firstChoiceSubject: "物理" as const,
+      subjectType: "物理类" as const,
+      score: 620,
+      rank: 12000,
+      preferredRegions: ["东北"],
+      locationStrictness: "hard" as const,
+    };
+
+    const recommendations = await buildGaokaoRecommendations(profile);
+    const items = Object.values(recommendations).flat();
+
+    expect(items.map((item) => item.schoolName)).toEqual(
+      expect.arrayContaining(["东北大学", "哈尔滨工程大学"]),
+    );
+    expect(
+      items.every((item) => ["辽宁", "吉林", "黑龙江"].includes(item.schoolProvince ?? "")),
+    ).toBe(true);
+  });
+
+  it("boosts northeast as a soft preference without filtering other provinces", async () => {
+    const profile = {
+      ...createEmptyGaokaoProfile(),
+      studentName: "李同学",
+      firstChoiceSubject: "物理" as const,
+      subjectType: "物理类" as const,
+      score: 620,
+      rank: 12000,
+      preferredRegions: ["东北"],
+      locationStrictness: "soft" as const,
+    };
+
+    const recommendations = await buildGaokaoRecommendations(profile);
+
+    expect(recommendations.wen[0]?.schoolName).toBe("哈尔滨工程大学");
+    expect(Object.values(recommendations).flat().map((item) => item.schoolName)).toContain(
+      "成都信息工程大学",
+    );
   });
 
   it("treats official plan 政治 requirements as 思想政治", async () => {

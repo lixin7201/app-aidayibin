@@ -31,6 +31,14 @@ const advisorProfilePatchFields = [
   "rejectedMajors",
   "preferredCities",
   "rejectedCities",
+  "preferredRegions",
+  "rejectedRegions",
+  "preferredSchoolProvinces",
+  "rejectedSchoolProvinces",
+  "preferredSchoolCities",
+  "rejectedSchoolCities",
+  "distancePreference",
+  "locationStrictness",
   "riskPreference",
   "tuitionLimit",
   "acceptPrivate",
@@ -49,6 +57,8 @@ function getReportTitle(profile: GaokaoProfile) {
 
 function cleanGaokaoChatText(value: string) {
   return cleanLegacyMarkdown(value)
+    .replace(/张雪峰|张老师|峰哥/g, "直给顾问口吻")
+    .replace(/保证录取|包录取|100%|百分百|一定能上/g, "录取承诺")
     .replace(/\*\*/g, "")
     .replace(/^\s*#{1,6}\s*/gm, "")
     .replace(/^\s*[-*_]{3,}\s*$/gm, "")
@@ -98,6 +108,24 @@ function applyAdvisorResult(
     rejectedMajors: mergeUniqueValues(profile.rejectedMajors, safePatch.rejectedMajors),
     preferredCities: mergeUniqueValues(profile.preferredCities, safePatch.preferredCities),
     rejectedCities: mergeUniqueValues(profile.rejectedCities, safePatch.rejectedCities),
+    preferredRegions: mergeUniqueValues(profile.preferredRegions, safePatch.preferredRegions),
+    rejectedRegions: mergeUniqueValues(profile.rejectedRegions, safePatch.rejectedRegions),
+    preferredSchoolProvinces: mergeUniqueValues(
+      profile.preferredSchoolProvinces,
+      safePatch.preferredSchoolProvinces,
+    ),
+    rejectedSchoolProvinces: mergeUniqueValues(
+      profile.rejectedSchoolProvinces,
+      safePatch.rejectedSchoolProvinces,
+    ),
+    preferredSchoolCities: mergeUniqueValues(
+      profile.preferredSchoolCities,
+      safePatch.preferredSchoolCities,
+    ),
+    rejectedSchoolCities: mergeUniqueValues(
+      profile.rejectedSchoolCities,
+      safePatch.rejectedSchoolCities,
+    ),
   };
 
   return {
