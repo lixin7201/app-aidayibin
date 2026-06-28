@@ -191,6 +191,69 @@ export async function deleteImageObject(input: {
   await deleteObject(input.objectKey);
 }
 
+export async function deleteImageUrlObject(input: {
+  provider?: string | null;
+  url?: string | null;
+}) {
+  const object = getObjectReferenceFromPublicUrl(input.url);
+
+  if (!object) {
+    return;
+  }
+
+  await deleteImageObject({
+    provider: input.provider ?? object.provider,
+    objectKey: object.objectKey,
+  });
+}
+
+export async function deleteTaskImages(input: {
+  provider?: string | null;
+  userId: string;
+  taskId: string;
+  originalObjectKey?: string | null;
+  previewObjectKey?: string | null;
+  shareObjectKey?: string | null;
+  cardObjectKey?: string | null;
+  tempInputUrls?: unknown;
+}) {
+  const objectKeys = new Set(
+    [
+      input.originalObjectKey,
+      input.previewObjectKey,
+      input.shareObjectKey,
+      input.cardObjectKey,
+      getResultImageObjectKey(input.userId, input.taskId),
+      getResultPreviewImageObjectKey(input.userId, input.taskId),
+      getResultShareImageObjectKey(input.userId, input.taskId),
+      getResultCardImageObjectKey(input.userId, input.taskId),
+    ].filter((key): key is string => Boolean(key)),
+  );
+
+  const deletions = [
+    ...Array.from(objectKeys).map((objectKey) =>
+      deleteImageObject({ provider: input.provider, objectKey }),
+    ),
+    ...(Array.isArray(input.tempInputUrls)
+      ? input.tempInputUrls
+          .filter((url): url is string => typeof url === "string")
+          .map((url) =>
+            deleteImageUrlObject({
+              url,
+            }),
+          )
+      : []),
+  ];
+
+  const results = await Promise.allSettled(deletions);
+
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.warn("Image cleanup failed", result.reason);
+    }
+  });
+}
+
 export function getResultImageUrlFromTask(
   task: {
     storedImageUrl?: string | null;
@@ -230,6 +293,52 @@ function normalizeProvider(provider?: string | null): ImageStorageProvider | nul
   }
 
   return null;
+}
+
+function getObjectReferenceFromPublicUrl(url: string | null | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url, config.NEXT_PUBLIC_APP_URL);
+    const publicBaseUrls = [
+      { provider: "aliyun_oss", url: config.ALIYUN_OSS_PUBLIC_BASE_URL },
+      { provider: "r2", url: config.CLOUDFLARE_R2_PUBLIC_BASE_URL },
+      { provider: "local", url: config.LOCAL_IMAGE_PUBLIC_BASE_URL },
+    ].filter(
+      (item): item is { provider: ImageStorageProvider; url: string } =>
+        Boolean(item.url),
+    );
+
+    for (const publicBaseUrl of publicBaseUrls) {
+      const base = new URL(publicBaseUrl.url);
+
+      if (parsed.origin !== base.origin) {
+        continue;
+      }
+
+      const basePath = base.pathname.replace(/\/$/, "");
+
+      if (basePath && !parsed.pathname.startsWith(`${basePath}/`)) {
+        continue;
+      }
+
+      return {
+        provider: publicBaseUrl.provider,
+        objectKey: decodeURIComponent(
+          parsed.pathname.slice(basePath.length).replace(/^\//, ""),
+        ),
+      };
+    }
+
+    return {
+      provider: undefined,
+      objectKey: decodeURIComponent(parsed.pathname.replace(/^\//, "")),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function getResultObjectKeys(userId: string, taskId: string) {

@@ -13,6 +13,7 @@ import type { FortuneGenerationTaskRecord } from "@/lib/db/database.types";
 import { prisma } from "@/lib/db/prisma";
 import { toFortuneGenerationTaskRecord } from "@/lib/db/records";
 import { apiPath } from "@/lib/routes";
+import { deleteTaskImages } from "@/lib/storage/image-storage";
 
 export type CreateFortuneTaskRecordInput = {
   user: SessionUser;
@@ -211,10 +212,41 @@ export async function softDeleteUserFortuneGeneration(
   userId: string,
   taskId: string,
 ) {
+  const task = await prisma.fortuneGenerationTask.findFirst({
+    where: { id: taskId, user_id: userId },
+    select: {
+      id: true,
+      user_id: true,
+      storage_provider: true,
+      storage_object_key: true,
+      preview_object_key: true,
+      share_object_key: true,
+      card_object_key: true,
+      temp_input_urls: true,
+    },
+  });
+
+  if (!task) {
+    return false;
+  }
+
   const result = await prisma.fortuneGenerationTask.updateMany({
     where: { id: taskId, user_id: userId },
     data: { deleted_at: new Date() },
   });
+
+  if (result.count > 0) {
+    await deleteTaskImages({
+      provider: task.storage_provider,
+      userId: task.user_id,
+      taskId: task.id,
+      originalObjectKey: task.storage_object_key,
+      previewObjectKey: task.preview_object_key,
+      shareObjectKey: task.share_object_key,
+      cardObjectKey: task.card_object_key,
+      tempInputUrls: task.temp_input_urls,
+    });
+  }
 
   return result.count > 0;
 }

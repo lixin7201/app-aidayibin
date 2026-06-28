@@ -1,7 +1,7 @@
 import { subHours } from "date-fns";
 
 import { prisma } from "@/lib/db/prisma";
-import { deleteObject } from "@/lib/storage/r2";
+import { deleteImageUrlObject } from "@/lib/storage/image-storage";
 
 export async function cleanupTempImages(retentionHours = 24) {
   const cutoff = subHours(new Date(), retentionHours);
@@ -10,7 +10,10 @@ export async function cleanupTempImages(retentionHours = 24) {
       status: { in: ["succeeded", "failed", "canceled"] },
       completed_at: { lt: cutoff },
     },
-    select: { id: true, user_id: true, temp_input_urls: true },
+    select: {
+      id: true,
+      temp_input_urls: true,
+    },
     take: 100,
   });
 
@@ -20,10 +23,7 @@ export async function cleanupTempImages(retentionHours = 24) {
       for (const url of task.temp_input_urls) {
         if (typeof url !== "string") continue;
         try {
-          const objectKey = extractObjectKeyFromUrl(url);
-          if (objectKey) {
-            await deleteObject(objectKey);
-          }
+          await deleteImageUrlObject({ url });
         } catch (error) {
           console.warn(`Failed to delete temp image for task ${task.id}:`, error);
         }
@@ -41,7 +41,10 @@ export async function cleanupTempImages(retentionHours = 24) {
       status: { in: ["succeeded", "failed", "canceled"] },
       completed_at: { lt: cutoff },
     },
-    select: { id: true, user_id: true, temp_input_urls: true },
+    select: {
+      id: true,
+      temp_input_urls: true,
+    },
     take: 100,
   });
 
@@ -50,10 +53,7 @@ export async function cleanupTempImages(retentionHours = 24) {
       for (const url of task.temp_input_urls) {
         if (typeof url !== "string") continue;
         try {
-          const objectKey = extractObjectKeyFromUrl(url);
-          if (objectKey) {
-            await deleteObject(objectKey);
-          }
+          await deleteImageUrlObject({ url });
         } catch (error) {
           console.warn(`Failed to delete temp image for fortune task ${task.id}:`, error);
         }
@@ -70,18 +70,6 @@ export async function cleanupTempImages(retentionHours = 24) {
     cleaned: tasks.length,
     fortuneCleaned: fortuneTasks.length,
   };
-}
-
-function extractObjectKeyFromUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    // R2 public URL 格式: https://{account}.r2.cloudflarestorage.com/{bucket}/{objectKey}
-    // 或自定义域名: https://cdn.example.com/{objectKey}
-    // 我们只需要路径部分去掉开头的 /
-    return parsed.pathname.replace(/^\//, "");
-  } catch {
-    return null;
-  }
 }
 
 if (process.env.RUN_WORKER_ONCE === "true") {

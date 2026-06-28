@@ -10,15 +10,19 @@ type SyncFortuneTaskResult = {
   message?: string;
 };
 
+const taskLockMs = 5 * 60 * 1000;
+
 export async function syncPendingFortuneTasks(input?: {
   userId?: string;
   batchSize?: number;
 }) {
+  const now = new Date();
   const tasks = await prisma.fortuneGenerationTask.findMany({
     where: {
       status: { in: ["pending", "processing"] },
       provider_task_id: { not: null },
       deleted_at: null,
+      OR: [{ lock_until: null }, { lock_until: { lt: now } }],
       ...(input?.userId ? { user_id: input.userId } : {}),
     },
     orderBy: { created_at: "asc" },
@@ -28,10 +32,39 @@ export async function syncPendingFortuneTasks(input?: {
   const results = [];
 
   for (const task of tasks) {
-    results.push(await syncFortuneTask(toFortuneGenerationTaskRecord(task)));
+    const record = toFortuneGenerationTaskRecord(task);
+    const claimed = await claimFortuneTask(record.id);
+
+    if (!claimed) {
+      results.push({
+        taskId: record.id,
+        status: "skipped",
+        message: "Task is locked by another worker",
+      } satisfies SyncFortuneTaskResult);
+      continue;
+    }
+
+    results.push(await syncFortuneTask(record));
   }
 
   return results;
+}
+
+async function claimFortuneTask(taskId: string) {
+  const now = new Date();
+  const result = await prisma.fortuneGenerationTask.updateMany({
+    where: {
+      id: taskId,
+      status: { in: ["pending", "processing"] },
+      deleted_at: null,
+      OR: [{ lock_until: null }, { lock_until: { lt: now } }],
+    },
+    data: {
+      lock_until: new Date(now.getTime() + taskLockMs),
+    },
+  });
+
+  return result.count > 0;
 }
 
 export async function syncFortuneTask(task: FortuneGenerationTaskRecord) {
@@ -48,7 +81,10 @@ export async function syncFortuneTask(task: FortuneGenerationTaskRecord) {
     ) {
       await prisma.fortuneGenerationTask.update({
         where: { id: task.id },
-        data: { status: providerResult.status },
+        data: {
+          status: providerResult.status,
+          lock_until: null,
+        },
       });
 
       return {
@@ -65,6 +101,7 @@ export async function syncFortuneTask(task: FortuneGenerationTaskRecord) {
           error_code: providerResult.errorCode ?? "PROVIDER_FAILED",
           error_message: providerResult.errorMessage ?? "AI 生成失败",
           completed_at: new Date(),
+          lock_until: null,
         },
       });
 
@@ -102,6 +139,7 @@ export async function syncFortuneTask(task: FortuneGenerationTaskRecord) {
         counts_quota: true,
         quota_counted_at: new Date(),
         completed_at: new Date(),
+        lock_until: null,
       },
     });
 
@@ -116,6 +154,7 @@ export async function syncFortuneTask(task: FortuneGenerationTaskRecord) {
         error_code: "WORKER_ERROR",
         error_message: message,
         completed_at: new Date(),
+        lock_until: null,
       },
     });
 
