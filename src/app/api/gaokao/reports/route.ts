@@ -4,6 +4,7 @@ import { requireStoredSessionFromRequest } from "@/features/auth/session";
 import { createGaokaoReportSchema } from "@/features/gaokao/gaokao-schemas";
 import {
   getGaokaoDataStatus,
+  getGaokaoGenerationStatus,
   listGaokaoReports,
 } from "@/features/gaokao/gaokao-repository";
 import { saveGaokaoReport } from "@/features/gaokao/gaokao-service";
@@ -14,12 +15,13 @@ import { assertRateLimit } from "@/lib/security/rate-limit";
 export async function GET(request: NextRequest) {
   try {
     const user = await requireStoredSessionFromRequest(request);
-    const [reports, dataStatus] = await Promise.all([
+    const [reports, dataStatus, generationStatus] = await Promise.all([
       listGaokaoReports(user.id),
       getGaokaoDataStatus(),
+      getGaokaoGenerationStatus(user.id),
     ]);
 
-    return apiOk({ reports, dataStatus });
+    return apiOk({ reports, dataStatus, generationStatus });
   } catch (error) {
     return apiError(error);
   }
@@ -44,8 +46,9 @@ export async function POST(request: NextRequest) {
       submitIp: getClientIp(request),
       userAgent: getUserAgent(request),
     });
+    const generationStatus = await getGaokaoGenerationStatus(user.id);
 
-    return apiOk({ report });
+    return apiOk({ report, generationStatus });
   } catch (error) {
     return apiError(error);
   }

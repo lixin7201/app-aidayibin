@@ -8,13 +8,13 @@ datasource db {
 }
 
 model AppUser {
-  id          String    @id @default(uuid()) @db.Char(36)
-  app_user_id String    @unique @db.VarChar(191)
-  nickname    String?   @db.Text
-  avatar_url  String?   @db.Text
-  status      String    @default("normal") @db.VarChar(32)
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  id           String    @id @default(uuid()) @db.Char(36)
+  app_user_id  String    @unique @db.VarChar(191)
+  nickname     String?   @db.Text
+  avatar_url   String?   @db.Text
+  status       String    @default("normal") @db.VarChar(32)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
   last_seen_at DateTime?
 
   generation_tasks         GenerationTask[]
@@ -198,13 +198,13 @@ model FortuneGenerationTask {
 }
 
 model ApiRateLimit {
-  id            String   @id @default(uuid()) @db.Char(36)
-  rate_key      String   @db.VarChar(191)
-  window_start  DateTime
-  count         Int      @default(0)
-  expires_at    DateTime
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  id           String   @id @default(uuid()) @db.Char(36)
+  rate_key     String   @db.VarChar(191)
+  window_start DateTime
+  count        Int      @default(0)
+  expires_at   DateTime
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 
   @@unique([rate_key, window_start], map: "idx_rate_limits_key_window_unique")
   @@index([expires_at], map: "idx_rate_limits_expires")
@@ -263,6 +263,81 @@ model GaokaoScoreSegment {
   @@unique([year, province, subject_type, score], map: "uniq_gaokao_score_segment")
   @@index([province, subject_type, score], map: "idx_gaokao_segment_lookup")
   @@map("gaokao_score_segments")
+}
+
+model GaokaoMajorPlan {
+  id                      String   @id @default(uuid()) @db.Char(36)
+  source_id               String   @unique @db.VarChar(191)
+  year                    Int
+  province                String   @db.VarChar(32)
+  subject_type            String   @db.VarChar(32)
+  batch                   String?  @db.VarChar(191)
+  plan_type               String?  @db.VarChar(191)
+  school_code             String   @db.VarChar(32)
+  school_name             String   @db.Text
+  school_major_group_code String?  @db.VarChar(64)
+  group_code              String?  @db.VarChar(32)
+  group_name              String?  @db.VarChar(191)
+  major_code              String?  @db.VarChar(32)
+  major_full_name         String?  @db.Text
+  major_name              String   @db.Text
+  major_note              String?  @db.Text
+  other_note              String?  @db.Text
+  subject_requirement     String?  @db.Text
+  degree_level            String?  @db.VarChar(32)
+  plan_count              Int?
+  tuition                 Int?
+  duration                String?  @db.VarChar(32)
+  group_plan_count        Int?
+  group_major_count       Int?
+  group_cleanliness       Float?
+  major_category          String?  @db.VarChar(191)
+  major_class             String?  @db.VarChar(191)
+  estimated_rank_2026     Int?
+  is_new                  Boolean  @default(false)
+  group_admit_count_2025  Int?
+  group_score_2025        Int?
+  group_rank_2025         Int?
+  admit_count_2025        Int?
+  score_2025              Int?
+  rank_2025               Int?
+  average_score_2025      Int?
+  average_rank_2025       Int?
+  admit_count_2024        Int?
+  score_2024              Int?
+  rank_2024               Int?
+  average_score_2024      Int?
+  average_rank_2024       Int?
+  admit_count_2023        Int?
+  score_2023              Int?
+  rank_2023               Int?
+  average_score_2023      Int?
+  average_rank_2023       Int?
+  school_province         String?  @db.VarChar(64)
+  school_city             String?  @db.VarChar(64)
+  city_level_label        String?  @db.VarChar(64)
+  school_tags             String?  @db.Text
+  school_level            String?  @db.Text
+  school_type             String?  @db.VarChar(191)
+  ownership               String?  @db.VarChar(64)
+  school_rank             Int?
+  postgraduate_rate       Float?
+  transfer_policy         String?  @db.Text
+  admission_rule          String?  @db.Text
+  charter_url             String?  @db.Text
+  major_rating            String?  @db.VarChar(64)
+  major_ranking           Int?
+  discipline_eval         String?  @db.VarChar(191)
+  major_level             String?  @db.Text
+  source_file             String?  @db.Text
+  raw_payload             Json?
+  created_at              DateTime @default(now())
+
+  @@index([year, province, subject_type, batch], map: "idx_gaokao_major_plan_year_subject")
+  @@index([province, subject_type, estimated_rank_2026], map: "idx_gaokao_major_plan_estimated_rank")
+  @@index([province, subject_type, group_rank_2025], map: "idx_gaokao_major_plan_group_rank")
+  @@index([province, subject_type, school_code, group_code], map: "idx_gaokao_major_plan_group")
+  @@map("gaokao_major_plans")
 }
 
 model GaokaoReport {

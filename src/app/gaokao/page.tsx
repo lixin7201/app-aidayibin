@@ -2,6 +2,7 @@ import { getStoredSessionFromCookies } from "@/features/auth/session";
 import { GaokaoAssistantApp } from "@/features/gaokao/gaokao-app";
 import {
   getGaokaoDataStatus,
+  getGaokaoGenerationStatus,
   listGaokaoReports,
 } from "@/features/gaokao/gaokao-repository";
 
@@ -10,9 +11,19 @@ export const revalidate = 0;
 
 export default async function GaokaoPage() {
   const user = await getStoredSessionFromCookies();
-  const [dataStatus, reports] = await Promise.all([
+  const [dataStatus, reports, generationStatus] = await Promise.all([
     getGaokaoDataStatus(),
     user ? listGaokaoReports(user.id) : Promise.resolve([]),
+    user
+      ? getGaokaoGenerationStatus(user.id)
+      : Promise.resolve({
+          totalReports: 0,
+          activeReports: 0,
+          deletedReports: 0,
+          canGenerate: false,
+          isUnlimitedTestUser: false,
+          message: "请先登录大宜宾 App 后使用。",
+        }),
   ]);
 
   return (
@@ -27,6 +38,7 @@ export default async function GaokaoPage() {
       }
       initialReports={reports}
       initialDataStatus={dataStatus}
+      initialGenerationStatus={generationStatus}
     />
   );
 }

@@ -270,6 +270,14 @@ export function AppTokenLogin() {
       window.location.href = oauthUrl;
     }
 
+    function isPublicSharePage() {
+      return (
+        window.location.pathname.includes("/share/gaokao/") ||
+        window.location.pathname.includes("/share/photo/") ||
+        window.location.pathname.includes("/share/fortune/")
+      );
+    }
+
     function dispatchAppVisible() {
       window.dispatchEvent(new CustomEvent(appVisibleEventName));
     }
@@ -290,6 +298,12 @@ export function AppTokenLogin() {
       const identityFromUrl = readIdentityFromUrl();
       const mockIdentity = readMockIdentity();
       installMockQFH5Bridge(mockIdentity);
+
+      if (!identityFromUrl && !mockIdentity && isPublicSharePage()) {
+        clearNoIdentityRetry();
+        return;
+      }
+
       try {
         const identity = identityFromUrl ?? (await readIdentityFromQFH5());
 
@@ -297,7 +311,7 @@ export function AppTokenLogin() {
           // 无 App 身份时，检测微信环境并自动跳转 OAuth
           const hasSession = await checkSession();
 
-          if (!hasSession && isWechatBrowser()) {
+          if (!hasSession && isWechatBrowser() && !isPublicSharePage()) {
             redirectToWechatOAuth();
             return;
           }

@@ -5,9 +5,11 @@ import {
   decodeSignedCookie,
   encodeSignedCookie,
 } from "@/lib/auth/signed-cookie";
+import { config } from "@/lib/config";
 import { cookiePath } from "@/lib/routes";
 
 const adminSessionCookieName = "aidayibin_admin_session";
+const useSecureCookies = config.NEXT_PUBLIC_APP_URL.startsWith("https://");
 
 export type AdminSession = {
   username: string;
@@ -18,24 +20,48 @@ function decodeSession(value: string | undefined) {
   return decodeSignedCookie<AdminSession>(value);
 }
 
-export async function setAdminSession(session: AdminSession) {
+function shouldUseSecureCookie(request?: NextRequest) {
+  if (!useSecureCookies) {
+    return false;
+  }
+
+  if (request) {
+    const forwardedProto = request.headers
+      .get("x-forwarded-proto")
+      ?.split(",")[0]
+      ?.trim();
+
+    if (forwardedProto) {
+      return forwardedProto === "https";
+    }
+
+    return new URL(request.url).protocol === "https:";
+  }
+
+  return useSecureCookies;
+}
+
+export async function setAdminSession(
+  session: AdminSession,
+  request?: NextRequest,
+) {
   const cookieStore = await cookies();
 
   cookieStore.set(adminSessionCookieName, encodeSignedCookie(session), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(request),
     path: cookiePath,
     maxAge: 60 * 60 * 24 * 7,
   });
 }
 
-export async function clearAdminSession() {
+export async function clearAdminSession(request?: NextRequest) {
   const cookieStore = await cookies();
   cookieStore.set(adminSessionCookieName, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(request),
     path: cookiePath,
     expires: new Date(0),
   });

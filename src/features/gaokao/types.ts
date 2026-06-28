@@ -2,9 +2,16 @@ export type GaokaoSubjectType = "物理类" | "历史类";
 
 export type GaokaoRiskPreference = "aggressive" | "balanced" | "safe";
 
+export type GaokaoFirstChoiceSubject = "物理" | "历史";
+
+export type GaokaoOptionalSubject = "化学" | "生物" | "思想政治" | "地理";
+
 export type GaokaoProfile = {
   province: "四川";
   examYear: 2026;
+  studentName: string | null;
+  firstChoiceSubject: GaokaoFirstChoiceSubject | null;
+  optionalSubjects: GaokaoOptionalSubject[];
   subjectType: GaokaoSubjectType | null;
   score: number | null;
   rank: number | null;
@@ -34,6 +41,21 @@ export type GaokaoRecommendationItem = {
   rankGap: number | null;
   riskLabel: string;
   reason: string;
+  majorSuggestions?: GaokaoMajorSuggestion[];
+};
+
+export type GaokaoMajorSuggestion = {
+  majorName: string;
+  majorNote: string | null;
+  subjectRequirement: string | null;
+  planCount: number | null;
+  tuition: number | null;
+  duration: string | null;
+  estimatedRank: number | null;
+  previousRank: number | null;
+  groupRank: number | null;
+  fitReason: string;
+  riskNote: string | null;
 };
 
 export type GaokaoRecommendationBucket = "chong" | "wen" | "bao";
@@ -61,12 +83,25 @@ export type GaokaoReportListItem = {
   summary: string;
   createdAt: string;
   sharePageUrl: string;
+  shareImageUrl: string;
+};
+
+export type GaokaoGenerationStatus = {
+  totalReports: number;
+  activeReports: number;
+  deletedReports: number;
+  canGenerate: boolean;
+  isUnlimitedTestUser: boolean;
+  message: string;
 };
 
 export function createEmptyGaokaoProfile(): GaokaoProfile {
   return {
     province: "四川",
     examYear: 2026,
+    studentName: null,
+    firstChoiceSubject: null,
+    optionalSubjects: [],
     subjectType: null,
     score: null,
     rank: null,

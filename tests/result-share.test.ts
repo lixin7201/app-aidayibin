@@ -24,14 +24,14 @@ describe("buildResultSharePageUrl", () => {
     expect(url).not.toContain("/ai/ai/");
   });
 
-  it("upgrades public http share page urls to https for WeChat sharing", async () => {
+  it("keeps the configured public protocol for share page urls", async () => {
     process.env.NEXT_PUBLIC_APP_URL = "http://ces.dayibin.cn/ai";
     process.env.NEXT_PUBLIC_BASE_PATH = "/ai";
 
     const { buildResultSharePageUrl } = await import("@/lib/share/result-share");
 
     expect(buildResultSharePageUrl("fortune", "task-456", "token_xyz")).toBe(
-      "https://ces.dayibin.cn/ai/share/fortune/task-456?s=token_xyz",
+      "http://ces.dayibin.cn/ai/share/fortune/task-456?s=token_xyz",
     );
   });
 });

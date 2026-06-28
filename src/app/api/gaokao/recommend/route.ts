@@ -2,9 +2,9 @@ import type { NextRequest } from "next/server";
 
 import { requireStoredSessionFromRequest } from "@/features/auth/session";
 import { gaokaoRecommendSchema } from "@/features/gaokao/gaokao-schemas";
-import { getGaokaoRecommendations } from "@/features/gaokao/gaokao-service";
+import { generateAndSaveGaokaoReport } from "@/features/gaokao/gaokao-service";
 import { apiError, apiOk } from "@/lib/http/errors";
-import { parseJsonBody } from "@/lib/http/request";
+import { getClientIp, getUserAgent, parseJsonBody } from "@/lib/http/request";
 import { assertRateLimit } from "@/lib/security/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -17,7 +17,12 @@ export async function POST(request: NextRequest) {
     });
 
     const payload = gaokaoRecommendSchema.parse(await parseJsonBody(request));
-    const result = await getGaokaoRecommendations(payload.profile);
+    const result = await generateAndSaveGaokaoReport({
+      user,
+      profile: payload.profile,
+      submitIp: getClientIp(request),
+      userAgent: getUserAgent(request),
+    });
 
     return apiOk(result);
   } catch (error) {

@@ -1,5 +1,7 @@
 import {
   createEmptyGaokaoProfile,
+  type GaokaoFirstChoiceSubject,
+  type GaokaoOptionalSubject,
   type GaokaoProfile,
   type GaokaoRiskPreference,
   type GaokaoSubjectType,
@@ -62,6 +64,13 @@ const cityKeywords = [
   "西安",
 ];
 
+const optionalSubjectKeywords: GaokaoOptionalSubject[] = [
+  "化学",
+  "生物",
+  "思想政治",
+  "地理",
+];
+
 function unique(values: string[]) {
   return Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)));
 }
@@ -91,6 +100,30 @@ function inferSubjectType(text: string): GaokaoSubjectType | null {
   }
 
   if (/物理|理科|首选物理/.test(text)) {
+    return "物理类";
+  }
+
+  return null;
+}
+
+function inferFirstChoiceSubject(text: string): GaokaoFirstChoiceSubject | null {
+  if (/历史|文科|首选历史/.test(text)) {
+    return "历史";
+  }
+
+  if (/物理|理科|首选物理/.test(text)) {
+    return "物理";
+  }
+
+  return null;
+}
+
+function toSubjectType(firstChoiceSubject: GaokaoFirstChoiceSubject | null) {
+  if (firstChoiceSubject === "历史") {
+    return "历史类";
+  }
+
+  if (firstChoiceSubject === "物理") {
     return "物理类";
   }
 
@@ -132,6 +165,11 @@ function inferTuitionLimit(text: string) {
   return parseNumber(match?.[1]);
 }
 
+function inferStudentName(text: string) {
+  const match = text.match(/(?:我叫|姓名是|名字叫|学生叫)\s*([\u4e00-\u9fa5A-Za-z]{2,20})/);
+  return match?.[1] ?? null;
+}
+
 function inferAccepted(text: string, positive: RegExp, negative: RegExp) {
   if (negative.test(text)) {
     return false;
@@ -144,6 +182,15 @@ function inferAccepted(text: string, positive: RegExp, negative: RegExp) {
   return null;
 }
 
+function mergeNotes(current: string | null | undefined, message: string) {
+  const notes = [current, message]
+    .flatMap((item) => item?.split(/\n+/) ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(notes)).join("\n").slice(-1000) || null;
+}
+
 export function mergeGaokaoProfile(
   current: Partial<GaokaoProfile> | undefined,
   message: string,
@@ -153,10 +200,15 @@ export function mergeGaokaoProfile(
     ...current,
   };
   const subjectType = inferSubjectType(message);
+  const firstChoiceSubject = inferFirstChoiceSubject(message);
   const score = inferScore(message);
   const rank = inferRank(message);
   const tuitionLimit = inferTuitionLimit(message);
   const riskPreference = inferRiskPreference(message);
+  const studentName = inferStudentName(message);
+  const optionalSubjects = optionalSubjectKeywords.filter((subject) =>
+    message.includes(subject),
+  );
   const preferredMajors = majorKeywords.filter((keyword) =>
     message.includes(keyword),
   );
@@ -172,7 +224,16 @@ export function mergeGaokaoProfile(
     ...base,
     province: "四川",
     examYear: 2026,
-    subjectType: subjectType ?? base.subjectType,
+    studentName: studentName ?? base.studentName,
+    firstChoiceSubject: firstChoiceSubject ?? base.firstChoiceSubject,
+    optionalSubjects: unique([
+      ...(base.optionalSubjects ?? []),
+      ...optionalSubjects,
+    ]) as GaokaoOptionalSubject[],
+    subjectType:
+      subjectType ??
+      toSubjectType(firstChoiceSubject) ??
+      base.subjectType,
     score: score ?? base.score,
     rank: rank ?? base.rank,
     batch:
@@ -213,7 +274,7 @@ export function mergeGaokaoProfile(
         /不接受调剂|不要调剂|不服从/,
       ),
     ),
-    notes: message.length > 0 ? message : base.notes,
+    notes: mergeNotes(base.notes, message),
   };
 }
 
@@ -224,12 +285,12 @@ export function getMissingGaokaoFields(profile: GaokaoProfile) {
     fields.push("科类");
   }
 
-  if (!profile.score && !profile.rank) {
-    fields.push("分数或位次");
+  if (!profile.studentName) {
+    fields.push("姓名");
   }
 
-  if (!profile.rank) {
-    fields.push("全省位次");
+  if (!profile.score && !profile.rank) {
+    fields.push("分数或位次");
   }
 
   return fields;
@@ -242,12 +303,12 @@ export function buildNextGaokaoQuestion(profile: GaokaoProfile) {
     return "先确认一个硬信息：你是四川物理类还是历史类？这个不说清楚，后面推荐就像拿错地图导航。";
   }
 
-  if (missing.includes("分数或位次")) {
-    return "把高考分数和全省位次发我一下。能给位次最好，分数负责热闹，位次才负责上桌。";
+  if (missing.includes("姓名")) {
+    return "再补一个姓名，用在报告和分享卡片上。放心，这里只做本次志愿初筛展示。";
   }
 
-  if (missing.includes("全省位次")) {
-    return "你已经给了分数，再补一个全省位次会更稳。志愿填报主要看位次，不然容易被今年题目难易度带偏。";
+  if (missing.includes("分数或位次")) {
+    return "把高考分数发我一下。知道全省位次也可以一起发，不知道的话我会按 2026 一分一段表自动补。";
   }
 
   if (profile.preferredMajors.length === 0) {

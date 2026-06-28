@@ -46,6 +46,13 @@ const envSchema = z.object({
   GAOKAO_LLM_API_KEY: optionalString,
   GAOKAO_LLM_MODEL: optionalString,
   GAOKAO_LLM_REPORT_MODEL: optionalString,
+  GAOKAO_ADVISOR_BASE_URL: optionalUrl,
+  GAOKAO_ADVISOR_API_KEY: optionalString,
+  GAOKAO_ADVISOR_TIMEOUT_MS: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().positive().max(60_000).default(15_000),
+  ),
+  GAOKAO_UNLIMITED_TEST_USER_IDS: optionalString,
   WECHAT_APP_ID: optionalString,
   WECHAT_APP_SECRET: optionalString,
   WECHAT_OAUTH_REDIRECT_URL: optionalUrl,

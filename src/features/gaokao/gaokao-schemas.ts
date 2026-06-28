@@ -3,6 +3,11 @@ import { z } from "zod";
 export const gaokaoProfileSchema = z.object({
   province: z.literal("四川").default("四川"),
   examYear: z.literal(2026).default(2026),
+  studentName: z.string().trim().min(1).max(20).nullable().default(null),
+  firstChoiceSubject: z.enum(["物理", "历史"]).nullable().default(null),
+  optionalSubjects: z
+    .array(z.enum(["化学", "生物", "思想政治", "地理"]))
+    .default([]),
   subjectType: z.enum(["物理类", "历史类"]).nullable().default(null),
   score: z.number().int().min(0).max(750).nullable().default(null),
   rank: z.number().int().min(1).max(1_000_000).nullable().default(null),
@@ -41,6 +46,23 @@ const gaokaoRecommendationItemSchema = z.object({
   rankGap: z.number().int().nullable(),
   riskLabel: z.string().min(1),
   reason: z.string().min(1),
+  majorSuggestions: z
+    .array(
+      z.object({
+        majorName: z.string().min(1),
+        majorNote: z.string().nullable(),
+        subjectRequirement: z.string().nullable(),
+        planCount: z.number().int().nullable(),
+        tuition: z.number().int().nullable(),
+        duration: z.string().nullable(),
+        estimatedRank: z.number().int().nullable(),
+        previousRank: z.number().int().nullable(),
+        groupRank: z.number().int().nullable(),
+        fitReason: z.string().min(1),
+        riskNote: z.string().nullable(),
+      }),
+    )
+    .optional(),
 });
 
 export const gaokaoRecommendationsSchema = z.object({

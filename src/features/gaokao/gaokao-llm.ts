@@ -3,6 +3,10 @@ import type {
   GaokaoProfile,
   GaokaoRecommendations,
 } from "@/features/gaokao/types";
+import {
+  buildGaokaoReportContent,
+  serializeGaokaoReportContent,
+} from "@/features/gaokao/gaokao-report";
 import { config } from "@/lib/config";
 
 type ChatMessage = {
@@ -10,12 +14,51 @@ type ChatMessage = {
   content: string;
 };
 
+const gaokaoBusinessFacts =
+  "当前业务事实：今天按服务器日期处理；四川 2026 高考已结束；2026 普通高考物理类、历史类成绩分段统计表已于 2026-06-25 发布；2026 普通类按院校专业组填报，投档遵循位次优先、遵循志愿、一轮投档；2026 录取结果尚未产生，不能说已有 2026 录取位次或录取概率，只能参考 2025/2024 历史投档和 2026 成绩位次、招生计划。";
+
 function hasLlmConfig() {
   return Boolean(
     config.GAOKAO_LLM_BASE_URL &&
       config.GAOKAO_LLM_API_KEY &&
       config.GAOKAO_LLM_MODEL,
   );
+}
+
+function formatList(values: string[], fallback: string) {
+  return values.length > 0 ? values.join("、") : fallback;
+}
+
+function buildLocalAdvisorReply(input: {
+  profile: GaokaoProfile;
+  fallbackQuestion: string;
+}) {
+  const { profile } = input;
+  const subject = [
+    profile.firstChoiceSubject,
+    ...profile.optionalSubjects,
+  ].filter(Boolean);
+  const confirmed = [
+    profile.studentName ? `姓名 ${profile.studentName}` : null,
+    subject.length > 0
+      ? `科目 ${subject.join(" + ")}`
+      : profile.subjectType
+        ? `科类 ${profile.subjectType}`
+        : null,
+    profile.score ? `${profile.score} 分` : null,
+  ]
+    .filter(Boolean)
+    .join("，");
+  const hasEnoughScoreInfo = Boolean(profile.subjectType && (profile.rank || profile.score));
+
+  return [
+    `我先确认一下：${confirmed || "基础信息还没补齐"}。这些会直接进入后面的志愿初筛报告。`,
+    hasEnoughScoreInfo
+      ? `接下来会以四川${profile.subjectType ?? ""}${profile.rank ? "、系统定位的位次" : ""}为主线看冲稳保。专业偏好是 ${formatList(profile.preferredMajors, "暂未明确")}，城市偏好是 ${formatList(profile.preferredCities, "暂未明确")}，这些会影响排序，但不会替代位次判断。`
+      : "志愿初筛最怕关键硬信息缺一块：科类、位次、分数至少要先对齐，后面谈专业和城市才不跑偏。",
+    `风险上先记住三件事：民办、中外合作和调剂范围要提前确认；冲档不能当稳档；2026 录取结果还没产生，不能把历史投档当成承诺。`,
+    input.fallbackQuestion,
+  ].join("\n\n");
 }
 
 async function callGaokaoLlm(messages: ChatMessage[], model?: string) {
@@ -84,23 +127,30 @@ export async function generateGaokaoAssistantReply(input: {
   profile: GaokaoProfile;
   fallbackQuestion: string;
 }) {
+  const fallbackReply = buildLocalAdvisorReply({
+    profile: input.profile,
+    fallbackQuestion: input.fallbackQuestion,
+  });
   const llm = await callGaokaoLlm([
     {
       role: "system",
-      content:
-        "你是大宜宾高考填报 AI 助手，只服务四川考生。语气专业、清楚、略幽默。你只能追问或解释用户画像，不能编造学校、分数线、录取概率。",
+      content: [
+        "你是大宜宾高考填报 AI 助手，只服务四川考生。语气专业、清楚、略幽默。每次回复先确认用户刚补充的信息，再给 2-4 段具体分析，最后只问一个关键问题或提示可以生成报告。你只能追问或解释用户画像，不能编造学校、分数线、录取概率。",
+        "回复必须是纯中文自然段落，不使用 Markdown 标题、加粗、分隔线、表格或项目符号。",
+        gaokaoBusinessFacts,
+      ].join("\n"),
     },
     {
       role: "user",
       content: JSON.stringify({
         userMessage: input.userMessage,
         extractedProfile: input.profile,
-        fallbackQuestion: input.fallbackQuestion,
+        fallbackQuestion: fallbackReply,
       }),
     },
   ]);
 
-  return llm ?? input.fallbackQuestion;
+  return llm ?? fallbackReply;
 }
 
 export async function generateGaokaoReportSummary(input: {
@@ -108,22 +158,5 @@ export async function generateGaokaoReportSummary(input: {
   recommendations: GaokaoRecommendations;
   dataStatus: GaokaoDataStatus;
 }) {
-  const fallback = buildFallbackGaokaoSummary(input);
-  const model = config.GAOKAO_LLM_REPORT_MODEL || config.GAOKAO_LLM_MODEL;
-  const llm = await callGaokaoLlm(
-    [
-      {
-        role: "system",
-        content:
-          "你是大宜宾高考填报 AI 助手。基于已给出的数据库推荐结果写一份四川考生志愿初筛报告。不得新增学校，不得编造分数、位次、录取承诺。语言专业、家长能看懂，可以有轻微幽默。",
-      },
-      {
-        role: "user",
-        content: JSON.stringify(input),
-      },
-    ],
-    model,
-  );
-
-  return llm ?? fallback;
+  return serializeGaokaoReportContent(buildGaokaoReportContent(input));
 }

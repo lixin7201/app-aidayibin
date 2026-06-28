@@ -34,10 +34,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await setAdminSession({
-      username: body.username,
-      role: "admin",
-    });
+    await setAdminSession(
+      {
+        username: body.username,
+        role: "admin",
+      },
+      request,
+    );
 
     return apiOk({ ok: true });
   } catch (error) {

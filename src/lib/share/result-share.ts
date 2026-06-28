@@ -1,17 +1,6 @@
 import { config } from "@/lib/config";
 import { appPath } from "@/lib/routes";
 
-function preferHttpsForPublicUrl(url: URL) {
-  const isLocalHost =
-    url.hostname === "localhost" ||
-    url.hostname === "127.0.0.1" ||
-    url.hostname === "0.0.0.0";
-
-  if (url.protocol === "http:" && !isLocalHost) {
-    url.protocol = "https:";
-  }
-}
-
 export function buildResultSharePageUrl(
   kind: "photo" | "fortune" | "gaokao",
   taskId: string,
@@ -21,7 +10,15 @@ export function buildResultSharePageUrl(
     appPath(`/share/${kind}/${taskId}`),
     config.NEXT_PUBLIC_APP_URL,
   );
-  preferHttpsForPublicUrl(url);
+  url.searchParams.set("s", token);
+  return url.toString();
+}
+
+export function buildGaokaoReportCardImageUrl(reportId: string, token: string) {
+  const url = new URL(
+    appPath(`/api/gaokao/reports/${reportId}/card`),
+    config.NEXT_PUBLIC_APP_URL,
+  );
   url.searchParams.set("s", token);
   return url.toString();
 }
