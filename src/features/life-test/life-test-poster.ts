@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { parse as parseOpenTypeFont, type OpenTypeFont } from "opentype.js";
+import QRCode from "qrcode";
 import sharp from "sharp";
 
 import { lifeTestCityConfig } from "@/features/life-test/config/city";
@@ -299,6 +300,26 @@ async function renderPosterAvatarImage(input: {
     .toBuffer();
 }
 
+async function renderPosterQrImage(pageUrl?: string) {
+  if (!pageUrl) {
+    return null;
+  }
+
+  try {
+    return QRCode.toBuffer(pageUrl, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 156,
+      color: {
+        dark: "#062F2B",
+        light: "#FFF7E6",
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function renderLifeTestPosterFallbackBaseSvg(result: LifeTestResultType) {
   const growthColor = result.code.startsWith("growth") ? "#176B87" : "#0B4B3F";
   const openColor = result.code.includes("-open-") ? "#F7A23B" : "#9CD8C8";
@@ -341,7 +362,7 @@ export function renderLifeTestPosterOverlaySvg(input: {
   const slogan = truncateText(input.result.posterSubtitle, 34);
   const keywords = input.result.posterTags.slice(0, 3);
   const footerText = input.pageUrl
-    ? "长按保存，发给朋友涮坛子"
+    ? "扫码测同款，看看你是不是同一种状态"
     : "打开大宜宾 App，测精神状态";
 
   return `<svg width="${posterWidth}" height="${posterHeight}" viewBox="0 0 ${posterWidth} ${posterHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -405,6 +426,20 @@ export function renderLifeTestPosterOverlaySvg(input: {
     maxWidth: 620,
     opacity: 0.94,
   })}
+  ${input.pageUrl ? `<g>
+  <rect x="736" y="304" width="220" height="246" rx="28" fill="#021917" opacity="0.34"/>
+  <rect x="728" y="296" width="220" height="246" rx="28" fill="#FFF7E6" opacity="0.96"/>
+  <rect x="746" y="314" width="184" height="184" rx="22" fill="#FFF7E6" stroke="#062F2B" stroke-opacity="0.26" stroke-width="2"/>
+  ${renderPosterText({
+    value: "扫码测同款",
+    x: 838,
+    y: 524,
+    fontSize: 24,
+    fill: "#062F2B",
+    maxWidth: 164,
+    anchor: "middle",
+  })}
+  </g>` : ""}
   <rect x="58" y="910" width="908" height="492" rx="32" fill="#021917" opacity="0.28"/>
   <rect x="62" y="902" width="900" height="492" rx="32" fill="url(#posterPanel)"/>
   <rect x="62" y="902" width="900" height="492" rx="32" stroke="#FFF7E6" stroke-opacity="0.28" stroke-width="2"/>
@@ -515,12 +550,19 @@ export async function renderLifeTestPosterJpeg(input: {
     avatarUrl: input.avatarUrl,
     nickname,
   });
+  const qr = await renderPosterQrImage(input.pageUrl);
+  const composites: sharp.OverlayOptions[] = [
+    { input: overlay, left: 0, top: 0 },
+    { input: avatar, left: 758, top: 74 },
+  ];
+
+  if (qr) {
+    composites.push({ input: qr, left: 760, top: 328 });
+  }
+
   const image = await baseImage
     .resize(posterWidth, posterHeight, { fit: "cover" })
-    .composite([
-      { input: overlay, left: 0, top: 0 },
-      { input: avatar, left: 758, top: 74 },
-    ])
+    .composite(composites)
     .jpeg({ quality: 90 })
     .toBuffer();
 

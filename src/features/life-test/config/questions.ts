@@ -25,6 +25,7 @@ type QuestionSeed = {
   evidenceKey?: string;
   tags?: string[];
 };
+type QuestionMeta = Pick<QuestionSeed, "eventKey" | "evidenceKey">;
 
 export const lifeTestQuestionCount = 13;
 export const lifeTestHiddenTag = "宜宾隐藏款：不想被框住，但接受好耍";
@@ -48,6 +49,109 @@ const branchScoreKeyByBranch: Record<AdaptiveBranch, LifeTestBranchScoreKey> = {
   recovery: "recoveryNeed",
   antiRoutine: "antiRoutine",
   local: "localFlavor",
+};
+
+const semanticEventKeyByQuestionId: Record<string, string> = {
+  "core-01": "after_hours_work_ping",
+  "core-02": "local_job_post_review",
+  "core-03": "matchmaker_expectation",
+  "core-04": "dinner_status_round",
+  "core-05": "empty_weekend_choice",
+  "final-01": "one_button_wish",
+  "final-02": "words_to_take_back",
+  "final-03": "tomorrow_small_power",
+  "final-04": "today_relief_button",
+  "final-05": "night_snack_state",
+  "final-06": "tonight_keep_one_thing",
+  "final-07": "friend_checking_in",
+  "final-08": "morning_relief_choice",
+};
+
+const semanticEventKeysByBranch: Record<AdaptiveBranch, string[]> = {
+  work: [
+    "boss_simple_chat",
+    "monday_simple_chat",
+    "urgent_request_check",
+    "future_pitch_review",
+    "after_hours_short_meeting",
+    "coworker_busy_ping",
+    "self_review_blank",
+    "client_final_revision",
+    "handover_simple_trap",
+    "weekend_team_building",
+  ],
+  job: [
+    "salary_negotiable_post",
+    "young_team_phrase",
+    "interview_restart_cost",
+    "friend_referral_push",
+    "overtime_requirement",
+    "saved_jobs_stuck",
+    "lingang_commute_tradeoff",
+    "hr_leave_reason",
+    "old_resume_update",
+    "stay_stable_advice",
+  ],
+  love: [
+    "single_word_reply",
+    "coffee_invite",
+    "single_word_reply_fear",
+    "blind_date_work_talk",
+    "slow_reply_from_match",
+    "type_question",
+    "early_rest_message",
+    "matchmaker_active_push",
+    "walk_invite",
+    "interesting_compliment",
+  ],
+  social: [
+    "three_groups_99plus",
+    "nanan_acquaintance",
+    "group_at_mention",
+    "new_friend_group",
+    "why_not_go_out",
+    "next_time_invite",
+    "long_voice_message",
+    "liven_up_room",
+    "moments_before_posting",
+    "dinner_table_cue",
+  ],
+  recovery: [
+    "empty_weekend_rest",
+    "after_work_quiet_need",
+    "one_day_weekend_recover",
+    "old_town_quiet_walk",
+    "friend_asks_really_ok",
+    "delivery_choice_tired",
+    "jiang_breeze_outing",
+    "late_night_food_scroll",
+    "hard_to_talk_about_mood",
+    "favorite_rest_style",
+  ],
+  antiRoutine: [
+    "future_plan_question",
+    "choose_clear_direction",
+    "what_do_you_want",
+    "pretty_plan_resistance",
+    "many_ideas_comment",
+    "wrong_options",
+    "must_be_happy_event",
+    "young_people_plan",
+    "change_without_pressure",
+    "no_explanation_day",
+  ],
+  local: [
+    "friend_asks_ranmian",
+    "only_ranmian_claim",
+    "local_reliable_meaning",
+    "half_day_route",
+    "bashi_anyi_difference",
+    "familiar_shop_price_up",
+    "yibin_dialect_special",
+    "local_chat_sound",
+    "place_for_state",
+    "best_time_to_daze",
+  ],
 };
 
 function buildEvidenceText(questionTitle: string, optionText: string) {
@@ -79,13 +183,16 @@ function question(
   feedback: string,
   options: OptionInput[],
   tags?: string[],
+  meta: QuestionMeta = {},
 ): LifeTestQuestion {
+  const eventKey = meta.eventKey ?? semanticEventKeyByQuestionId[id] ?? id;
+
   return {
     id,
     branch,
-    eventKey: id,
+    eventKey,
     sceneType: branch,
-    evidenceKey: `${branch}:${id}`,
+    evidenceKey: meta.evidenceKey ?? `${branch}:${eventKey}`,
     title,
     feedback,
     options: options.map((item) =>
@@ -109,6 +216,10 @@ function branchQuestions(
       seed.feedback,
       optionSets[index % optionSets.length],
       seed.tags,
+      {
+        eventKey: seed.eventKey ?? semanticEventKeysByBranch[branch][index],
+        evidenceKey: seed.evidenceKey,
+      },
     ),
   );
 }
@@ -2792,13 +2903,20 @@ export function buildLifeTestQuestionFlow(answers: LifeTestAnswer[] = []) {
     matchmakerSuppressed,
   );
   const branchUsage = new Map<AdaptiveBranch, number>();
-  const adaptiveQuestions = branchPlan
-    .map((branch) => {
-      const used = branchUsage.get(branch) ?? 0;
-      branchUsage.set(branch, used + 1);
-      return pickRotated(questionsForBranch(branch), 1, seed + used)[0];
-    })
-    .filter((item): item is LifeTestQuestion => Boolean(item));
+  const usedEventKeys = new Set(core.map((questionItem) => questionItem.eventKey));
+  const adaptiveQuestions: LifeTestQuestion[] = [];
+
+  for (const branch of branchPlan) {
+    const used = branchUsage.get(branch) ?? 0;
+    branchUsage.set(branch, used + 1);
+
+    const questionItem = pickFlowQuestion(branch, seed + used, usedEventKeys);
+
+    if (questionItem) {
+      usedEventKeys.add(questionItem.eventKey);
+      adaptiveQuestions.push(questionItem);
+    }
+  }
   const finalQuestion =
     questionsForBranch("final").find((questionItem) => questionItem.id === "final-04") ??
     pickRotated(questionsForBranch("final"), 1, seed + 13)[0];
@@ -2808,6 +2926,17 @@ export function buildLifeTestQuestionFlow(answers: LifeTestAnswer[] = []) {
     ...adaptiveQuestions,
     ...(finalQuestion ? [finalQuestion] : []),
   ];
+}
+
+function pickFlowQuestion(
+  branch: AdaptiveBranch,
+  seed: number,
+  usedEventKeys: Set<string>,
+) {
+  const questions = questionsForBranch(branch);
+  const candidates = pickRotated(questions, questions.length, seed);
+
+  return candidates.find((questionItem) => !usedEventKeys.has(questionItem.eventKey)) ?? candidates[0];
 }
 
 function getRankedBranches(scores: BranchScores) {

@@ -1102,7 +1102,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
 
       <section className="mx-auto w-full max-w-[560px] px-4 py-6">
         <div className="grid grid-cols-3 gap-3">
-          <TinyStat value="80+" label="题库动态抽题" />
+          <TinyStat value="69" label="题库动态抽题" />
           <TinyStat value="16" label="种精神状态" />
           <TinyStat value="1min" label="大概完成" />
         </div>

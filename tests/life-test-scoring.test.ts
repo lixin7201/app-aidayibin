@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 
 import {
   buildLifeTestQuestionFlow,
@@ -13,6 +14,7 @@ import {
   normalizeLifeTestAttribution,
 } from "@/features/life-test/life-test-attribution";
 import { lifeTestResults } from "@/features/life-test/config/results";
+import { renderLifeTestPosterJpeg } from "@/features/life-test/life-test-poster";
 import {
   getLifeTestResultCode,
   scoreLifeTestAnswers,
@@ -77,6 +79,29 @@ describe("life test scoring", () => {
       for (const option of question.options) {
         expect(option.evidenceText).toContain(option.text);
       }
+    }
+
+    expect(lifeTestQuestionBank.filter((question) => question.eventKey === question.id))
+      .toEqual([]);
+    expect(lifeTestQuestionBank.find((question) => question.id === "work-01")?.eventKey)
+      .toBe("boss_simple_chat");
+    expect(lifeTestQuestionBank.find((question) => question.id === "final-04")?.evidenceKey)
+      .toBe("final:today_relief_button");
+  });
+
+  it("does not repeat semantic events inside a generated question flow", () => {
+    const coreQuestions = buildLifeTestQuestionFlow().slice(0, 5);
+
+    for (const optionId of ["a", "b", "c", "d"]) {
+      const answers = coreQuestions.map((question) => ({
+        questionId: question.id,
+        optionId,
+      }));
+      const flow = buildLifeTestQuestionFlow(answers);
+      const eventKeys = flow.map((question) => question.eventKey);
+
+      expect(new Set(eventKeys).size).toBe(flow.length);
+      expect(flow.at(-1)?.id).toBe("final-04");
     }
   });
 
@@ -178,8 +203,13 @@ describe("life test scoring", () => {
   });
 
   it("defines complete long-form result and poster copy for every result", () => {
+    const analysisBodies = Object.values(lifeTestResults).map((result) => result.analysisBody);
+
+    expect(new Set(analysisBodies).size).toBe(analysisBodies.length);
+
     for (const result of Object.values(lifeTestResults)) {
       expect(Array.from(result.analysisBody).length).toBeGreaterThanOrEqual(250);
+      expect(result.analysisBody).not.toContain("这个结果，不是为了给你下结论");
       expect(result.comfortZone).toBeTruthy();
       expect(result.blindSpot).toBeTruthy();
       expect(result.todayAdvice).toBeTruthy();
@@ -190,6 +220,38 @@ describe("life test scoring", () => {
       expect(result.posterInsightLines).toHaveLength(2);
       expect(result.posterSealText).toBeTruthy();
     }
+  });
+
+  it("renders a share poster with a visible QR code area", async () => {
+    const image = await renderLifeTestPosterJpeg({
+      nickname: "测试用户",
+      result: lifeTestResults["stable-slow-soft-real"],
+      pageUrl: "https://www.aidayibin.com/ai/life-test/result/test-session",
+    });
+    const metadata = await sharp(image).metadata();
+
+    expect(metadata.format).toBe("jpeg");
+    expect(metadata.width).toBe(1024);
+    expect(metadata.height).toBe(1536);
+
+    const raw = await sharp(image).raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = raw;
+    let darkPixels = 0;
+
+    for (let y = 338; y < 474; y += 1) {
+      for (let x = 770; x < 906; x += 1) {
+        const offset = (y * info.width + x) * info.channels;
+        const red = data[offset] ?? 255;
+        const green = data[offset + 1] ?? 255;
+        const blue = data[offset + 2] ?? 255;
+
+        if (red < 90 && green < 100 && blue < 100) {
+          darkPixels += 1;
+        }
+      }
+    }
+
+    expect(darkPixels).toBeGreaterThan(1800);
   });
 
   it("uses dedicated option copy for every adaptive branch question", () => {
