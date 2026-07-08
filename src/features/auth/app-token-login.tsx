@@ -271,11 +271,7 @@ export function AppTokenLogin() {
     }
 
     function isPublicSharePage() {
-      return (
-        window.location.pathname.includes("/share/gaokao/") ||
-        window.location.pathname.includes("/share/photo/") ||
-        window.location.pathname.includes("/share/fortune/")
-      );
+      return isPublicSharePath(window.location.pathname);
     }
 
     function dispatchAppVisible() {
@@ -445,5 +441,15 @@ export function AppTokenLogin() {
     <div className="pointer-events-none fixed bottom-3 left-3 z-[9999] rounded-2xl border border-[#d8c59a] bg-[#fffaf0]/95 px-3 py-2 text-xs font-bold text-[#27362f] shadow-lg shadow-black/10 backdrop-blur">
       {debugMessage ?? "QFH5 调试中"}
     </div>
+  );
+}
+
+export function isPublicSharePath(pathname: string) {
+  return (
+    pathname.includes("/share/gaokao/") ||
+    pathname.includes("/share/photo/") ||
+    pathname.includes("/share/fortune/") ||
+    pathname.includes("/share/life-test/") ||
+    pathname.includes("/life-test/result/")
   );
 }

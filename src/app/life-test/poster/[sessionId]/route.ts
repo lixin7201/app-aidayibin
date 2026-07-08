@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new Response("Poster not ready", { status: 404 });
     }
 
-    const pageUrl = new URL(`/ai/life-test/result/${sessionId}`, request.url).toString();
+    const pageUrl = new URL(`/ai/share/life-test/${sessionId}`, request.url).toString();
     const currentUser = getSessionFromRequest(request);
     const image = await renderLifeTestPosterJpeg({
       nickname: session.nickname,

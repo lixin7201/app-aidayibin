@@ -90,7 +90,7 @@ const activeStorageKey = "dayibin-life-test-active-v1";
 const anonymousStorageKey = "dayibin-life-test-anonymous-v1";
 const attributionStorageKey = "dayibin-life-test-attribution-v1";
 const sessionStoragePrefix = "dayibin-life-test-session-v1:";
-const heroImage = assetPath("/templates/yibin-night-cinematic.png");
+const heroImage = assetPath("/life-test/home-hero.webp");
 const branchLabels: Record<LifeTestQuestionBranch, string> = {
   core: "状态起步题",
   work: "工作边界题",
@@ -662,7 +662,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       entryScene: "share_landing",
     });
     const pageUrl = appendAttribution(
-      `/life-test/result/${currentSessionId}`,
+      `/share/life-test/${currentSessionId}`,
       attribution,
     );
 
