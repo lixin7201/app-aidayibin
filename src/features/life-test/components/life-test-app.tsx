@@ -91,6 +91,40 @@ const anonymousStorageKey = "dayibin-life-test-anonymous-v1";
 const attributionStorageKey = "dayibin-life-test-attribution-v1";
 const sessionStoragePrefix = "dayibin-life-test-session-v1:";
 const heroImage = assetPath("/life-test/home-hero.webp");
+// ponytail: keeps the home page usable in Android WebViews if the external CSS bundle is skipped.
+const homeFallbackCss = `
+html,body{min-height:100%;margin:0;background:#f7f3ea}
+.life-home-root{min-height:100vh;background:#f7f3ea;color:#173b36;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.life-home-hero{position:relative;min-height:72vh;overflow:hidden;padding:24px 16px;color:#fff;background-size:cover;background-position:center}
+.life-home-hero-inner{width:100%;max-width:560px;min-height:calc(72vh - 48px);margin:0 auto;display:flex;flex-direction:column;justify-content:space-between}
+.life-home-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.life-home-eyebrow{margin:0;font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#ffe1a3}
+.life-home-kicker{margin:4px 0 0;font-size:14px;font-weight:700;color:rgba(255,255,255,.82)}
+.life-home-header-actions{display:flex;align-items:center;gap:8px;padding-right:24px}
+.life-home-top-link{height:40px;display:flex;align-items:center;gap:4px;border-radius:8px;background:rgba(255,255,255,.16);padding:0 12px;color:#fff;text-decoration:none;font-size:12px;font-weight:900;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.life-home-copy{padding-bottom:28px}
+.life-home-title{max-width:460px;margin:0;font-size:48px;line-height:1.04;font-weight:900;color:#fff}
+.life-home-desc{max-width:420px;margin:16px 0 0;font-size:18px;line-height:32px;font-weight:700;color:rgba(255,255,255,.88)}
+.life-home-actions{margin-top:24px;display:flex;flex-direction:column;gap:12px}
+.life-home-primary,.life-home-secondary,.life-home-download{border:0;text-decoration:none;border-radius:8px;font-weight:900;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 20px}
+.life-home-primary,.life-home-secondary{height:52px;width:100%}
+.life-home-primary{background:#ffe1a3;color:#173b36}
+.life-home-secondary{background:rgba(255,255,255,.14);color:#fff;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.life-home-notice{margin:16px 0 0;border-radius:8px;background:rgba(255,255,255,.18);padding:8px 12px;font-size:14px;font-weight:700;color:#fff}
+.life-home-download{margin-top:12px;display:inline-flex;height:44px;background:#fff;color:#173b36;font-size:14px}
+.life-home-body{width:100%;max-width:560px;margin:0 auto;padding:24px 16px}
+.life-home-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.life-home-stat{border-radius:8px;background:#fff;padding:12px;text-align:center}
+.life-home-stat-value{margin:0;font-size:24px;font-weight:900;color:#0f766e}
+.life-home-stat-label{margin:4px 0 0;font-size:12px;line-height:18px;font-weight:700;color:#6e766f}
+.life-home-disclaimer{margin-top:20px;border-radius:8px;background:#fff;padding:16px}
+.life-home-disclaimer-title{margin:0;font-size:14px;font-weight:900;color:#0f766e}
+.life-home-disclaimer-body{margin:8px 0 0;font-size:14px;line-height:24px;font-weight:700;color:#5e6d66}
+.life-home-root .life-user-avatar{display:inline-flex;width:40px;height:40px;align-items:center;justify-content:center;overflow:hidden;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#f6d06c}
+.life-home-root .life-user-avatar img{width:100%;height:100%;object-fit:cover}
+@media (min-width:640px){.life-home-actions{flex-direction:row}.life-home-primary,.life-home-secondary{width:auto}}
+@media (max-width:360px){.life-home-title{font-size:40px}.life-home-desc{font-size:16px;line-height:28px}.life-home-body{padding-top:20px}.life-home-stats{gap:8px}.life-home-stat{padding:10px 8px}}
+`;
 const branchLabels: Record<LifeTestQuestionBranch, string> = {
   core: "状态起步题",
   work: "工作边界题",
@@ -1074,29 +1108,30 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-[#F7F3EA] text-[#173B36]">
+    <main className="life-home-root min-h-screen bg-[#F7F3EA] text-[#173B36]">
+      <style>{homeFallbackCss}</style>
       <section
-        className="relative min-h-[72vh] overflow-hidden px-4 py-6 text-white"
+        className="life-home-hero relative min-h-[72vh] overflow-hidden px-4 py-6 text-white"
         style={{
           backgroundImage: `linear-gradient(180deg, rgba(4,31,28,.25), rgba(4,31,28,.76)), url(${heroImage})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
       >
-        <div className="mx-auto flex min-h-[calc(72vh-48px)] w-full max-w-[560px] flex-col justify-between">
-          <header className="flex items-center justify-between">
+        <div className="life-home-hero-inner mx-auto flex min-h-[calc(72vh-48px)] w-full max-w-[560px] flex-col justify-between">
+          <header className="life-home-header flex items-center justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#FFE1A3]">
+              <p className="life-home-eyebrow text-xs font-black uppercase tracking-[0.18em] text-[#FFE1A3]">
                 大宜宾 AI Studio
               </p>
-              <p className="mt-1 text-sm font-bold text-white/82">
+              <p className="life-home-kicker mt-1 text-sm font-bold text-white/82">
                 {user?.nickname ? `${user.nickname}，来测一下` : "宜宾人专属测试"}
               </p>
             </div>
-              <div className="flex items-center gap-2 pr-6">
+            <div className="life-home-header-actions flex items-center gap-2 pr-6">
               <a
                 href={appPath("/life-test/types")}
-                className="flex h-10 items-center gap-1 rounded-[8px] bg-white/16 px-3 text-xs font-black backdrop-blur"
+                className="life-home-top-link flex h-10 items-center gap-1 rounded-[8px] bg-white/16 px-3 text-xs font-black backdrop-blur"
               >
                 全部结果
                 <ChevronRight size={14} />
@@ -1105,17 +1140,17 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
             </div>
           </header>
 
-          <div className="pb-7">
-            <h1 className="max-w-[460px] text-5xl font-black leading-[1.04]">
+          <div className="life-home-copy pb-7">
+            <h1 className="life-home-title max-w-[460px] text-5xl font-black leading-[1.04]">
               宜宾精神状态测试
             </h1>
-            <p className="mt-4 max-w-[420px] text-lg font-bold leading-8 text-white/88">
+            <p className="life-home-desc mt-4 max-w-[420px] text-lg font-bold leading-8 text-white/88">
               3 分钟测你最近的工作、关系、社交和行动状态。
             </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <div className="life-home-actions mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                className="flex h-13 items-center justify-center gap-2 rounded-[8px] bg-[#FFE1A3] px-5 text-base font-black text-[#173B36]"
+                className="life-home-primary flex h-13 items-center justify-center gap-2 rounded-[8px] bg-[#FFE1A3] px-5 text-base font-black text-[#173B36]"
                 onClick={() => void startTest()}
               >
                 开始测试
@@ -1123,14 +1158,14 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
               </button>
               <a
                 href={appPath("/life-test/types")}
-                className="flex h-13 items-center justify-center gap-2 rounded-[8px] bg-white/14 px-5 text-base font-black text-white backdrop-blur"
+                className="life-home-secondary flex h-13 items-center justify-center gap-2 rounded-[8px] bg-white/14 px-5 text-base font-black text-white backdrop-blur"
               >
                 先看有哪些结果
                 <ChevronRight size={18} />
               </a>
             </div>
             {notice && (
-              <p className="mt-4 rounded-[8px] bg-white/18 px-3 py-2 text-sm font-bold text-white">
+              <p className="life-home-notice mt-4 rounded-[8px] bg-white/18 px-3 py-2 text-sm font-bold text-white">
                 {notice}
               </p>
             )}
@@ -1139,7 +1174,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                 href={getDayibinAppDownloadUrl()}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex h-11 items-center justify-center rounded-[8px] bg-white px-4 text-sm font-black text-[#173B36]"
+                className="life-home-download mt-3 inline-flex h-11 items-center justify-center rounded-[8px] bg-white px-4 text-sm font-black text-[#173B36]"
               >
                 下载/打开大宜宾 App
               </a>
@@ -1148,15 +1183,17 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-[560px] px-4 py-6">
-        <div className="grid grid-cols-3 gap-3">
+      <section className="life-home-body mx-auto w-full max-w-[560px] px-4 py-6">
+        <div className="life-home-stats grid grid-cols-3 gap-3">
           <TinyStat value="69" label="题库动态抽题" />
           <TinyStat value="16" label="种精神状态" />
           <TinyStat value="1min" label="大概完成" />
         </div>
-        <div className="mt-5 rounded-[8px] bg-white p-4">
-          <p className="text-sm font-black text-[#0F766E]">仅供娱乐</p>
-          <p className="mt-2 text-sm font-bold leading-6 text-[#5E6D66]">
+        <div className="life-home-disclaimer mt-5 rounded-[8px] bg-white p-4">
+          <p className="life-home-disclaimer-title text-sm font-black text-[#0F766E]">
+            仅供娱乐
+          </p>
+          <p className="life-home-disclaimer-body mt-2 text-sm font-bold leading-6 text-[#5E6D66]">
             {lifeTestCityConfig.disclaimer}
           </p>
         </div>
@@ -1167,9 +1204,13 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
 
 function TinyStat({ value, label }: { value: string; label: string }) {
   return (
-    <div className="rounded-[8px] bg-white p-3 text-center">
-      <p className="text-2xl font-black text-[#0F766E]">{value}</p>
-      <p className="mt-1 text-xs font-bold text-[#6E766F]">{label}</p>
+    <div className="life-home-stat rounded-[8px] bg-white p-3 text-center">
+      <p className="life-home-stat-value text-2xl font-black text-[#0F766E]">
+        {value}
+      </p>
+      <p className="life-home-stat-label mt-1 text-xs font-bold text-[#6E766F]">
+        {label}
+      </p>
     </div>
   );
 }
@@ -1186,7 +1227,7 @@ function LifeTestUserAvatar({
 
   return (
     <div
-      className={`inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border shadow-sm ${
+      className={`life-user-avatar inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border shadow-sm ${
         dark
           ? "border-white/20 bg-white/10 text-[#F6D06C]"
           : "border-white bg-white text-[#0F766E]"
