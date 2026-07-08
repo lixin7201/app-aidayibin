@@ -133,15 +133,23 @@ function isLegacyBase64SaveEnabled() {
   return process.env.NEXT_PUBLIC_ENABLE_BASE64_IMAGE_SAVE === "true";
 }
 
-function isWechatBrowser() {
-  return /MicroMessenger/i.test(window.navigator?.userAgent ?? "");
+export function isWechatBrowserUserAgent(userAgent: string) {
+  return /MicroMessenger/i.test(userAgent);
 }
 
-function getDayibinAppDownloadUrl() {
+export function isWechatBrowser() {
+  return isWechatBrowserUserAgent(window.navigator?.userAgent ?? "");
+}
+
+export function getDayibinAppDownloadUrl() {
   return (
     process.env.NEXT_PUBLIC_DAYIBIN_APP_DOWNLOAD_URL ??
     "https://a.app.qq.com/o/simple.jsp?pkgname=com.dayibin.forum"
   );
+}
+
+export function isQfh5Available() {
+  return Boolean(getQfh5());
 }
 
 export function openImageUrl(url: string) {

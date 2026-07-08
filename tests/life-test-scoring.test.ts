@@ -23,6 +23,7 @@ import {
   escapeLifeTestCsvValue,
   validateLifeTestLeadContact,
 } from "@/features/life-test/life-test-service";
+import { isWechatBrowserUserAgent } from "@/lib/qfh5-actions";
 import type {
   LifeTestAxes,
   LifeTestAnswer,
@@ -454,5 +455,13 @@ describe("life test lead contact validation", () => {
     expect(
       validateLifeTestLeadContact({ mobile: "13800138000", wechat: "dayibin_01" }),
     ).toEqual({ mobile: "13800138000", wechat: "dayibin_01" });
+  });
+});
+
+describe("wechat browser detection", () => {
+  it("detects WeChat user agents for app download gating", () => {
+    expect(isWechatBrowserUserAgent("Mozilla/5.0 MicroMessenger/8.0.50"))
+      .toBe(true);
+    expect(isWechatBrowserUserAgent("Mozilla/5.0 Safari/605.1.15")).toBe(false);
   });
 });

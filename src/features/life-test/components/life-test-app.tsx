@@ -45,6 +45,9 @@ import type {
 } from "@/features/life-test/types";
 import { apiPath, appPath, assetPath } from "@/lib/routes";
 import {
+  getDayibinAppDownloadUrl,
+  isQfh5Available,
+  isWechatBrowser,
   saveImageToPhone,
   shareImage,
   type SaveImageState,
@@ -306,6 +309,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [answers, setAnswers] = useState<LifeTestAnswer[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showAppDownloadCta, setShowAppDownloadCta] = useState(false);
   const [answerFeedback, setAnswerFeedback] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveImageState | null>(null);
   const [leadType, setLeadType] = useState<LeadType | null>(null);
@@ -457,7 +461,15 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
 
   async function startTest() {
     setNotice(null);
+    setShowAppDownloadCta(false);
     setAnswerFeedback(null);
+
+    if (isWechatBrowser() && !isQfh5Available()) {
+      setNotice("请下载或打开大宜宾 App 后参与测试。");
+      setShowAppDownloadCta(true);
+      return;
+    }
+
     const attribution = getCurrentAttribution();
     const fallbackId = `local-${createClientId("life-test")}`;
     let nextSession: StoredSession = {
@@ -1157,6 +1169,16 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
               <p className="mt-4 rounded-[8px] bg-white/18 px-3 py-2 text-sm font-bold text-white">
                 {notice}
               </p>
+            )}
+            {showAppDownloadCta && (
+              <a
+                href={getDayibinAppDownloadUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex h-11 items-center justify-center rounded-[8px] bg-white px-4 text-sm font-black text-[#173B36]"
+              >
+                下载/打开大宜宾 App
+              </a>
             )}
           </div>
         </div>
