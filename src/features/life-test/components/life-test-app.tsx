@@ -800,7 +800,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                   </div>
                 </article>
 
-                <div className="grid min-h-0 grid-rows-4 gap-1.5">
+                <div className="grid h-full max-h-[min(100%,62dvh,440px)] min-h-0 w-full self-center grid-rows-4 gap-2">
                   {currentQuestion.options.map((option) => {
                     const selected = selectedMap.get(currentQuestion.id) === option.id;
 
@@ -848,20 +848,20 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
               <div className="grid shrink-0 grid-cols-[1fr_1.4fr] gap-3 border-t border-white/10 bg-[#071514] pt-2">
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[8px] border border-white/15 bg-white/7 text-sm font-black text-[#F4FFFB] disabled:opacity-40"
+                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] border border-white/15 bg-white/7 text-[15px] font-black text-[#F4FFFB] disabled:opacity-40"
                   onClick={goPrevious}
                   disabled={activeIndex === 0}
                 >
-                  <ArrowLeft size={16} />
+                  <ArrowLeft size={17} />
                   上一题
                 </button>
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-[8px] bg-gradient-to-r from-[#24D6B4] to-[#9DF3DF] text-sm font-black text-[#06211E] shadow-[0_14px_34px_rgba(36,214,180,0.22)]"
+                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-gradient-to-r from-[#24D6B4] to-[#9DF3DF] text-[15px] font-black text-[#06211E] shadow-[0_14px_34px_rgba(36,214,180,0.22)]"
                   onClick={goNext}
                 >
                   {activeIndex === questionFlow.length - 1 ? "生成报告" : "下一题"}
-                  <ChevronRight size={16} />
+                  <ChevronRight size={17} />
                 </button>
               </div>
             </section>
