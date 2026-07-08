@@ -787,8 +787,8 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
           </div>
 
           {currentQuestion ? (
-            <section className="mt-3 flex min-h-0 flex-1 flex-col">
-              <div className="min-h-0 max-h-[calc(100dvh-214px)] overflow-y-auto pr-1">
+            <section className="mt-3 flex min-h-0 flex-1 flex-col justify-between">
+              <div className="min-h-0 overflow-y-auto pr-1">
                 <div className="grid gap-2.5 pb-3">
                   <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
                     <div className="flex items-start gap-2">
@@ -833,19 +833,23 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                 </div>
               </div>
 
-              {(notice || answerFeedback) && (
-                <p
-                  className={`mt-2 shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[12px] font-black leading-4 ${
-                    notice
-                      ? "border-[#F6D06C]/30 bg-[#F6D06C]/12 text-[#FFE1A3]"
-                      : "border-[#FF5B3C]/35 bg-[linear-gradient(135deg,rgba(255,91,60,0.13),rgba(36,214,180,0.08)),rgba(12,28,27,0.88)] text-[#D6EBE4]"
-                  }`}
-                >
-                  {notice ?? answerFeedback}
-                </p>
-              )}
+              <div className="mt-2 min-h-[44px] shrink-0">
+                {notice || answerFeedback ? (
+                  <p
+                    className={`rounded-[8px] border px-2.5 py-1.5 text-[12px] font-black leading-4 ${
+                      notice
+                        ? "border-[#F6D06C]/30 bg-[#F6D06C]/12 text-[#FFE1A3]"
+                        : "border-[#FF5B3C]/35 bg-[linear-gradient(135deg,rgba(255,91,60,0.13),rgba(36,214,180,0.08)),rgba(12,28,27,0.88)] text-[#D6EBE4]"
+                    }`}
+                  >
+                    {notice ?? answerFeedback}
+                  </p>
+                ) : null}
+              </div>
 
-              <div className="grid shrink-0 grid-cols-[1fr_1.4fr] gap-3 border-t border-white/10 bg-[#071514] pt-2">
+              <div className="h-0 shrink-0" aria-hidden="true" />
+
+              <div className="mt-2 grid shrink-0 grid-cols-[1fr_1.4fr] gap-3 border-t border-white/10 bg-[#071514] pt-2">
                 <button
                   type="button"
                   className="flex h-11 items-center justify-center gap-2 rounded-[8px] border border-white/15 bg-white/7 text-sm font-black text-[#F4FFFB] disabled:opacity-40"
