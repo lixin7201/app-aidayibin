@@ -1,7 +1,11 @@
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import type { Prisma } from "@prisma/client";
 
 import { getLifeTestResult, lifeTestResultList } from "@/features/life-test/config/results";
+import {
+  normalizeLifeTestAttribution,
+  type LifeTestAttributionInput,
+} from "@/features/life-test/life-test-attribution";
 import { scoreLifeTestAnswers } from "@/features/life-test/life-test-scoring";
 import type { SessionUser } from "@/features/auth/session";
 import type {
@@ -21,9 +25,7 @@ type RequestMeta = {
 type SessionCreateInput = {
   user: SessionUser | null;
   anonymousId?: string | null;
-  source?: string | null;
-  campaign?: string | null;
-} & RequestMeta;
+} & LifeTestAttributionInput & RequestMeta;
 
 function toJson(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -51,6 +53,12 @@ function toSessionPayload(session: {
   id: string;
   nickname: string | null;
   avatar_url: string | null;
+  campaign_id: string | null;
+  entry_scene: string | null;
+  channel: string | null;
+  region_code: string | null;
+  share_code: string | null;
+  referrer_session_id: string | null;
   status: string;
   answers_json: Prisma.JsonValue | null;
   score_json: Prisma.JsonValue | null;
@@ -68,6 +76,12 @@ function toSessionPayload(session: {
     id: session.id,
     nickname: session.nickname,
     avatarUrl: session.avatar_url ?? session.app_users?.avatar_url ?? null,
+    campaignId: session.campaign_id,
+    entryScene: session.entry_scene,
+    channel: session.channel,
+    regionCode: session.region_code,
+    shareCode: session.share_code,
+    referrerSessionId: session.referrer_session_id,
     status: session.status,
     answers: parseJsonArray<LifeTestAnswer>(session.answers_json),
     score: parseScore(session.score_json),
@@ -127,7 +141,31 @@ export function validateLifeTestLeadContact(input: {
   return { mobile, wechat };
 }
 
+function createShareCode() {
+  return randomBytes(6).toString("base64url").replaceAll("_", "").slice(0, 8);
+}
+
+async function resolveReferrerSessionId(input: LifeTestAttributionInput) {
+  if (input.referrerSessionId) {
+    return input.referrerSessionId;
+  }
+
+  const shareCode = input.shareCode?.trim();
+
+  if (!shareCode) {
+    return null;
+  }
+
+  const referrer = await prisma.lifeTestSession.findFirst({
+    where: { share_code: shareCode },
+    select: { id: true },
+  });
+
+  return referrer?.id ?? null;
+}
+
 export async function createLifeTestSession(input: SessionCreateInput) {
+  const attribution = normalizeLifeTestAttribution(input);
   const since = new Date(Date.now() - 10 * 60 * 1000);
   const repeatWhere = input.user
     ? { user_id: input.user.id, created_at: { gte: since } }
@@ -137,6 +175,7 @@ export async function createLifeTestSession(input: SessionCreateInput) {
   const recentCount = repeatWhere
     ? await prisma.lifeTestSession.count({ where: repeatWhere })
     : 0;
+  const referrerSessionId = await resolveReferrerSessionId(input);
   const session = await prisma.lifeTestSession.create({
     data: {
       user_id: input.user?.id ?? null,
@@ -144,8 +183,14 @@ export async function createLifeTestSession(input: SessionCreateInput) {
       anonymous_id: input.anonymousId ?? null,
       nickname: input.user?.nickname ?? null,
       avatar_url: input.user?.avatarUrl ?? null,
-      source: input.source ?? null,
-      campaign: input.campaign ?? null,
+      source: attribution.source,
+      campaign: attribution.campaign,
+      campaign_id: attribution.campaignId,
+      entry_scene: attribution.entryScene,
+      channel: attribution.channel,
+      region_code: attribution.regionCode,
+      share_code: createShareCode(),
+      referrer_session_id: referrerSessionId,
       user_agent: input.userAgent ?? null,
       ip_hash: hashIp(input.ip),
       repeat_high: recentCount >= 5,
@@ -156,8 +201,14 @@ export async function createLifeTestSession(input: SessionCreateInput) {
     user: input.user,
     sessionId: session.id,
     eventName: "start",
-    source: input.source,
-    campaign: input.campaign,
+    source: attribution.source,
+    campaign: attribution.campaign,
+    campaignId: attribution.campaignId,
+    entryScene: attribution.entryScene,
+    channel: attribution.channel,
+    regionCode: attribution.regionCode,
+    shareCode: attribution.shareCode,
+    referrerSessionId,
   });
 
   return toSessionPayload(session);
@@ -258,9 +309,8 @@ export async function recordLifeTestEvent(input: {
   sessionId?: string | null;
   eventName: string;
   eventData?: unknown;
-  source?: string | null;
-  campaign?: string | null;
-}) {
+} & LifeTestAttributionInput) {
+  const attribution = normalizeLifeTestAttribution(input);
   const event = await prisma.lifeTestEvent.create({
     data: {
       session_id: input.sessionId ?? null,
@@ -268,8 +318,15 @@ export async function recordLifeTestEvent(input: {
       app_user_id: input.user?.appUserId ?? null,
       event_name: input.eventName,
       event_data: input.eventData === undefined ? undefined : toJson(input.eventData),
-      source: input.source ?? null,
-      campaign: input.campaign ?? null,
+      source: attribution.source,
+      campaign: attribution.campaign,
+      campaign_id: attribution.campaignId,
+      entry_scene: attribution.entryScene,
+      channel: attribution.channel,
+      region_code: attribution.regionCode,
+      share_code: attribution.shareCode,
+      referrer_session_id: attribution.referrerSessionId,
+      poster_variant: attribution.posterVariant,
     },
   });
 
@@ -306,9 +363,8 @@ export async function createLifeTestLead(input: {
   wechat?: string | null;
   note?: string | null;
   consent: boolean;
-  source?: string | null;
-  campaign?: string | null;
-}) {
+} & LifeTestAttributionInput) {
+  const attribution = normalizeLifeTestAttribution(input);
   const { mobile, wechat } = validateLifeTestLeadContact(input);
 
   if (!input.consent) {
@@ -334,8 +390,14 @@ export async function createLifeTestLead(input: {
       wechat: wechat || null,
       note: input.note?.trim() || null,
       consent: input.consent,
-      source: input.source ?? null,
-      campaign: input.campaign ?? null,
+      source: attribution.source,
+      campaign: attribution.campaign,
+      campaign_id: attribution.campaignId,
+      entry_scene: attribution.entryScene,
+      channel: attribution.channel,
+      region_code: attribution.regionCode,
+      share_code: attribution.shareCode,
+      referrer_session_id: attribution.referrerSessionId,
     },
   });
 
@@ -344,8 +406,14 @@ export async function createLifeTestLead(input: {
     sessionId: input.sessionId,
     eventName: "lead_submit",
     eventData: { leadType: input.leadType },
-    source: input.source,
-    campaign: input.campaign,
+    source: attribution.source,
+    campaign: attribution.campaign,
+    campaignId: attribution.campaignId,
+    entryScene: attribution.entryScene,
+    channel: attribution.channel,
+    regionCode: attribution.regionCode,
+    shareCode: attribution.shareCode,
+    referrerSessionId: attribution.referrerSessionId,
   });
 
   return lead;
@@ -381,7 +449,17 @@ export async function getLifeTestAdminStats() {
     }),
     prisma.lifeTestSession.findMany({
       where: { created_at: { gte: sevenDayStart } },
-      select: { created_at: true, status: true },
+      select: {
+        created_at: true,
+        status: true,
+        result_code: true,
+        region_code: true,
+        channel: true,
+        share_count: true,
+        job_cta_clicks: true,
+        match_cta_clicks: true,
+        referrer_session_id: true,
+      },
     }),
     prisma.lifeTestEvent.findMany({
       where: {
@@ -396,11 +474,18 @@ export async function getLifeTestAdminStats() {
           ],
         },
       },
-      select: { created_at: true, event_name: true },
+      select: {
+        created_at: true,
+        event_name: true,
+        event_data: true,
+        region_code: true,
+        channel: true,
+        share_code: true,
+      },
     }),
     prisma.lifeTestLead.findMany({
       where: { created_at: { gte: sevenDayStart } },
-      select: { created_at: true },
+      select: { created_at: true, region_code: true, channel: true },
     }),
   ]);
   const eventCounts = Object.fromEntries(
@@ -449,6 +534,17 @@ export async function getLifeTestAdminStats() {
     }
   }
 
+  const regionStats = buildRegionStats(sevenDaySessions, sevenDayEvents);
+  const channelStats = buildChannelStats(
+    sevenDaySessions,
+    sevenDayEvents,
+    sevenDayLeads,
+  );
+  const resultPropagation = buildResultPropagationStats(
+    sevenDaySessions,
+    sevenDayEvents,
+  );
+
   return {
     todayPv: eventCounts.view_home ?? 0,
     todaySessions,
@@ -473,7 +569,242 @@ export async function getLifeTestAdminStats() {
       keywords: item.keywords,
     })),
     sevenDayTrend: trend,
+    regionStats,
+    channelStats,
+    resultPropagation,
   };
+}
+
+type AdminSessionStatsRow = {
+  status: string;
+  result_code: string | null;
+  region_code: string | null;
+  channel: string | null;
+  share_count: number;
+  job_cta_clicks: number;
+  match_cta_clicks: number;
+  referrer_session_id: string | null;
+};
+
+type AdminEventStatsRow = {
+  event_name: string;
+  event_data: Prisma.JsonValue | null;
+  region_code: string | null;
+  channel: string | null;
+};
+
+type AdminLeadStatsRow = {
+  region_code: string | null;
+  channel: string | null;
+};
+
+function statKey(value: string | null | undefined) {
+  return value || "未标记";
+}
+
+function rate(part: number, total: number) {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}
+
+function getEventResultCode(event: AdminEventStatsRow) {
+  const data = event.event_data;
+
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+
+  const resultCode = (data as Record<string, unknown>).resultCode;
+  return typeof resultCode === "string" ? resultCode : null;
+}
+
+function buildRegionStats(
+  sessions: AdminSessionStatsRow[],
+  events: AdminEventStatsRow[],
+) {
+  const rows = new Map<
+    string,
+    {
+      region: string;
+      starts: number;
+      completes: number;
+      shares: number;
+      posterSaves: number;
+      returnVisits: number;
+    }
+  >();
+  const ensure = (regionCode: string | null) => {
+    const key = statKey(regionCode);
+    const existing = rows.get(key);
+
+    if (existing) return existing;
+
+    const next = {
+      region: key,
+      starts: 0,
+      completes: 0,
+      shares: 0,
+      posterSaves: 0,
+      returnVisits: 0,
+    };
+    rows.set(key, next);
+    return next;
+  };
+
+  for (const session of sessions) {
+    const row = ensure(session.region_code);
+    row.starts += 1;
+    if (session.status === "completed") row.completes += 1;
+    if (session.referrer_session_id) row.returnVisits += 1;
+  }
+
+  for (const event of events) {
+    const row = ensure(event.region_code);
+    if (event.event_name === "share") row.shares += 1;
+    if (event.event_name === "poster_save") row.posterSaves += 1;
+  }
+
+  return Array.from(rows.values())
+    .map((row) => ({
+      ...row,
+      completionRate: rate(row.completes, row.starts),
+    }))
+    .sort(
+      (left, right) =>
+        right.starts - left.starts ||
+        right.returnVisits - left.returnVisits ||
+        left.region.localeCompare(right.region),
+    )
+    .slice(0, 12);
+}
+
+function buildChannelStats(
+  sessions: AdminSessionStatsRow[],
+  events: AdminEventStatsRow[],
+  leads: AdminLeadStatsRow[],
+) {
+  const rows = new Map<
+    string,
+    {
+      channel: string;
+      views: number;
+      starts: number;
+      completes: number;
+      shares: number;
+      leads: number;
+    }
+  >();
+  const ensure = (channel: string | null) => {
+    const key = statKey(channel);
+    const existing = rows.get(key);
+
+    if (existing) return existing;
+
+    const next = {
+      channel: key,
+      views: 0,
+      starts: 0,
+      completes: 0,
+      shares: 0,
+      leads: 0,
+    };
+    rows.set(key, next);
+    return next;
+  };
+
+  for (const session of sessions) {
+    const row = ensure(session.channel);
+    row.starts += 1;
+    if (session.status === "completed") row.completes += 1;
+  }
+
+  for (const event of events) {
+    const row = ensure(event.channel);
+    if (event.event_name === "view_home") row.views += 1;
+    if (event.event_name === "share") row.shares += 1;
+  }
+
+  for (const lead of leads) {
+    ensure(lead.channel).leads += 1;
+  }
+
+  return Array.from(rows.values())
+    .sort(
+      (left, right) =>
+        right.starts - left.starts ||
+        right.views - left.views ||
+        left.channel.localeCompare(right.channel),
+    )
+    .slice(0, 12);
+}
+
+function buildResultPropagationStats(
+  sessions: AdminSessionStatsRow[],
+  events: AdminEventStatsRow[],
+) {
+  const rows = new Map<
+    string,
+    {
+      resultCode: string;
+      resultName: string;
+      count: number;
+      shares: number;
+      posterSaves: number;
+      jobClicks: number;
+      matchmakerClicks: number;
+    }
+  >();
+  const ensure = (resultCode: string) => {
+    const existing = rows.get(resultCode);
+
+    if (existing) return existing;
+
+    const result = getLifeTestResult(resultCode as LifeTestResultCode);
+    const next = {
+      resultCode,
+      resultName: result?.name ?? resultCode,
+      count: 0,
+      shares: 0,
+      posterSaves: 0,
+      jobClicks: 0,
+      matchmakerClicks: 0,
+    };
+    rows.set(resultCode, next);
+    return next;
+  };
+
+  for (const session of sessions) {
+    if (!session.result_code || session.status !== "completed") continue;
+
+    const row = ensure(session.result_code);
+    row.count += 1;
+    row.shares += session.share_count;
+    row.jobClicks += session.job_cta_clicks;
+    row.matchmakerClicks += session.match_cta_clicks;
+  }
+
+  for (const event of events) {
+    const resultCode = getEventResultCode(event);
+    if (!resultCode) continue;
+
+    const row = ensure(resultCode);
+    if (event.event_name === "poster_save") row.posterSaves += 1;
+  }
+
+  return Array.from(rows.values())
+    .map((row) => ({
+      ...row,
+      shareRate: rate(row.shares, row.count),
+      saveRate: rate(row.posterSaves, row.count),
+      jobClickRate: rate(row.jobClicks, row.count),
+      matchClickRate: rate(row.matchmakerClicks, row.count),
+    }))
+    .sort(
+      (left, right) =>
+        right.shares - left.shares ||
+        right.posterSaves - left.posterSaves ||
+        right.count - left.count,
+    )
+    .slice(0, 16);
 }
 
 export async function listLifeTestAdminSessions() {
@@ -490,6 +821,12 @@ export async function listLifeTestAdminSessions() {
       appUserId: session.app_user_id,
       source: session.source,
       campaign: session.campaign,
+      campaignId: session.campaign_id,
+      entryScene: session.entry_scene,
+      channel: session.channel,
+      regionCode: session.region_code,
+      shareCode: session.share_code,
+      referrerSessionId: session.referrer_session_id,
       shareCount: session.share_count,
       jobCtaClicks: session.job_cta_clicks,
       matchCtaClicks: session.match_cta_clicks,
@@ -517,6 +854,14 @@ export async function listLifeTestAdminLeads() {
     mobile: lead.mobile,
     wechat: lead.wechat,
     note: lead.note,
+    source: lead.source,
+    campaign: lead.campaign,
+    campaignId: lead.campaign_id,
+    entryScene: lead.entry_scene,
+    channel: lead.channel,
+    regionCode: lead.region_code,
+    shareCode: lead.share_code,
+    referrerSessionId: lead.referrer_session_id,
     createdAt: lead.created_at.toISOString(),
   }));
 }
@@ -540,6 +885,12 @@ export async function exportLifeTestSessionsCsv() {
       "repeat_high",
       "source",
       "campaign",
+      "campaign_id",
+      "entry_scene",
+      "channel",
+      "region_code",
+      "share_code",
+      "referrer_session_id",
     ],
     ...sessions.map((session) => [
       session.id,
@@ -557,6 +908,12 @@ export async function exportLifeTestSessionsCsv() {
       session.repeatHigh ? "1" : "0",
       session.source ?? "",
       session.campaign ?? "",
+      session.campaignId ?? "",
+      session.entryScene ?? "",
+      session.channel ?? "",
+      session.regionCode ?? "",
+      session.shareCode ?? "",
+      session.referrerSessionId ?? "",
     ]),
   ];
 
@@ -577,6 +934,14 @@ export async function exportLifeTestLeadsCsv() {
       "wechat",
       "result_code",
       "result_name",
+      "source",
+      "campaign",
+      "campaign_id",
+      "entry_scene",
+      "channel",
+      "region_code",
+      "share_code",
+      "referrer_session_id",
       "note",
     ],
     ...leads.map((lead) => [
@@ -590,6 +955,14 @@ export async function exportLifeTestLeadsCsv() {
       lead.wechat ?? "",
       lead.resultCode ?? "",
       lead.resultName ?? "",
+      lead.source ?? "",
+      lead.campaign ?? "",
+      lead.campaignId ?? "",
+      lead.entryScene ?? "",
+      lead.channel ?? "",
+      lead.regionCode ?? "",
+      lead.shareCode ?? "",
+      lead.referrerSessionId ?? "",
       lead.note ?? "",
     ]),
   ];

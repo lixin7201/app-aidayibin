@@ -22,12 +22,18 @@ import { lifeTestCityConfig } from "@/features/life-test/config/city";
 import {
   buildLifeTestQuestionFlow,
   getLifeTestEscapeState,
+  isLifeTestMatchmakerSuppressed,
   lifeTestQuestionCount,
 } from "@/features/life-test/config/questions";
 import {
   getLifeTestResult,
   lifeTestResultList,
 } from "@/features/life-test/config/results";
+import {
+  normalizeLifeTestAttribution,
+  type LifeTestAttribution,
+  type LifeTestAttributionInput,
+} from "@/features/life-test/life-test-attribution";
 import { scoreLifeTestAnswers } from "@/features/life-test/life-test-scoring";
 import type {
   LifeTestAnswer,
@@ -61,6 +67,12 @@ type StoredSession = {
   id: string;
   nickname: string | null;
   avatarUrl: string | null;
+  campaignId: string | null;
+  entryScene: string | null;
+  channel: string | null;
+  regionCode: string | null;
+  shareCode: string | null;
+  referrerSessionId: string | null;
   answers: LifeTestAnswer[];
   activeIndex: number;
   score: LifeTestScoreResult | null;
@@ -72,6 +84,7 @@ type LeadType = "job" | "matchmaker" | "both";
 
 const activeStorageKey = "dayibin-life-test-active-v1";
 const anonymousStorageKey = "dayibin-life-test-anonymous-v1";
+const attributionStorageKey = "dayibin-life-test-attribution-v1";
 const sessionStoragePrefix = "dayibin-life-test-session-v1:";
 const heroImage = assetPath("/templates/yibin-night-cinematic.png");
 const branchLabels: Record<LifeTestQuestionBranch, string> = {
@@ -80,7 +93,7 @@ const branchLabels: Record<LifeTestQuestionBranch, string> = {
   job: "招聘换坑线",
   love: "红娘恋爱线",
   social: "社交电量线",
-  recovery: "江边回血线",
+  recovery: "休息恢复线",
   antiRoutine: "反骨隐藏线",
   local: "本地浓度线",
   final: "命运暴击题",
@@ -99,6 +112,61 @@ function getStoredAnonymousId() {
 
 function getSessionStorageKey(sessionId: string) {
   return `${sessionStoragePrefix}${sessionId}`;
+}
+
+function readStoredAttribution(): LifeTestAttributionInput {
+  try {
+    const raw = window.localStorage.getItem(attributionStorageKey);
+    return raw ? (JSON.parse(raw) as LifeTestAttributionInput) : {};
+  } catch {
+    return {};
+  }
+}
+
+function readUrlAttribution(): LifeTestAttributionInput {
+  const params = new URL(window.location.href).searchParams;
+  const value = (key: string) => params.get(key) ?? undefined;
+
+  return {
+    source: value("source"),
+    campaign: value("campaign"),
+    campaignId: value("campaign_id"),
+    entryScene: value("entry_scene"),
+    channel: value("channel"),
+    regionCode: value("region_code"),
+    shareCode: value("share_code"),
+    referrerSessionId: value("referrer_session_id"),
+    posterVariant: value("poster_variant"),
+  };
+}
+
+function getCurrentAttribution() {
+  const attribution = normalizeLifeTestAttribution({
+    ...readStoredAttribution(),
+    ...readUrlAttribution(),
+  });
+  window.localStorage.setItem(attributionStorageKey, JSON.stringify(attribution));
+  return attribution;
+}
+
+function appendAttribution(
+  path: string,
+  attribution: LifeTestAttribution,
+  extra?: LifeTestAttributionInput,
+) {
+  const next = new URL(appPath(path), window.location.origin);
+  const merged = normalizeLifeTestAttribution({ ...attribution, ...extra });
+
+  next.searchParams.set("campaign_id", merged.campaignId);
+  next.searchParams.set("entry_scene", merged.entryScene);
+  next.searchParams.set("channel", merged.channel);
+  if (merged.regionCode) next.searchParams.set("region_code", merged.regionCode);
+  if (merged.shareCode) next.searchParams.set("share_code", merged.shareCode);
+  if (merged.referrerSessionId) {
+    next.searchParams.set("referrer_session_id", merged.referrerSessionId);
+  }
+
+  return `${next.pathname}${next.search}`;
 }
 
 function readStoredSession(sessionId: string | null): StoredSession | null {
@@ -172,13 +240,13 @@ function buildResultMetrics(score: LifeTestScoreResult) {
 
   return [
     {
-      label: "班味浓度",
+      label: "工作安全感",
       value: clampMetric(
         42 + scores.careerStable * 5 + scores.decisionReal * 3 + scores.paceFast * 2,
       ),
     },
     {
-      label: "恋爱脑温度",
+      label: "关系节奏",
       value: clampMetric(
         28 + scores.loveOpen * 6 + scores.decisionFeel * 4 + scores.loveSlow * 2,
       ),
@@ -190,7 +258,7 @@ function buildResultMetrics(score: LifeTestScoreResult) {
       ),
     },
     {
-      label: "江边回血值",
+      label: "行动方式",
       value: clampMetric(36 + scores.paceSoft * 6 + scores.decisionFeel * 3),
     },
   ];
@@ -236,10 +304,19 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       return;
     }
 
+    const urlAttribution = readUrlAttribution();
+    const attribution = getCurrentAttribution();
     void postJson(apiPath("/life-test/events"), {
       eventName: "view_home",
-      source: "h5",
+      ...attribution,
     }).catch(() => undefined);
+
+    if (urlAttribution.shareCode) {
+      void postJson(apiPath("/life-test/events"), {
+        eventName: "share_landing",
+        ...attribution,
+      }).catch(() => undefined);
+    }
   }, [mode]);
 
   useEffect(() => {
@@ -273,6 +350,15 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   useEffect(() => {
     if (mode !== "result" || !sessionId) {
       return;
+    }
+
+    const urlAttribution = readUrlAttribution();
+    const attribution = getCurrentAttribution();
+    if (urlAttribution.shareCode) {
+      void postJson(apiPath("/life-test/events"), {
+        eventName: "share_landing",
+        ...attribution,
+      }).catch(() => undefined);
     }
 
     const stored = readStoredSession(sessionId);
@@ -316,6 +402,9 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
     (resultScore ? getLifeTestResult(resultScore.resultCode) : null);
   const resultMetrics = resultScore ? buildResultMetrics(resultScore) : [];
   const hiddenTag = resultScore?.hiddenTag ?? null;
+  const matchmakerSuppressed = isLifeTestMatchmakerSuppressed(
+    resultSession?.answers ?? answers,
+  );
   const currentSessionId = remoteSession?.id ?? activeSession?.id ?? sessionId ?? "";
   const resultOwnerProfile: CurrentUserProfile = {
     nickname: resultSession?.nickname ?? user?.nickname ?? "大宜宾用户",
@@ -331,11 +420,18 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   async function startTest() {
     setNotice(null);
     setAnswerFeedback(null);
+    const attribution = getCurrentAttribution();
     const fallbackId = `local-${createClientId("life-test")}`;
     let nextSession: StoredSession = {
       id: fallbackId,
       nickname: user?.nickname ?? null,
       avatarUrl: user?.avatarUrl ?? null,
+      campaignId: attribution.campaignId,
+      entryScene: attribution.entryScene,
+      channel: attribution.channel,
+      regionCode: attribution.regionCode,
+      shareCode: null,
+      referrerSessionId: attribution.referrerSessionId,
       answers: [],
       activeIndex: 0,
       score: null,
@@ -348,7 +444,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
         apiPath("/life-test/sessions"),
         {
           anonymousId: getStoredAnonymousId(),
-          source: "h5",
+          ...attribution,
         },
       );
       nextSession = {
@@ -356,9 +452,15 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
         id: payload.session.id,
         nickname: payload.session.nickname ?? user?.nickname ?? null,
         avatarUrl: payload.session.avatarUrl ?? user?.avatarUrl ?? null,
+        campaignId: payload.session.campaignId,
+        entryScene: payload.session.entryScene,
+        channel: payload.session.channel,
+        regionCode: payload.session.regionCode,
+        shareCode: payload.session.shareCode,
+        referrerSessionId: payload.session.referrerSessionId,
       };
     } catch {
-      setNotice("本地先继续测试，数据记录稍后自动补上。");
+      setNotice("本地先继续测试，数据记录稍后再补上。");
     }
 
     writeStoredSession(nextSession);
@@ -387,7 +489,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
     setNotice(null);
     setAnswerFeedback(
       nextEscapeState.hiddenPrompt
-        ? "系统提示：普通题已经管不住你，正在切换隐藏题库。"
+        ? "这几题已经看出来了：普通选项有点装不下你，后面换个问法。"
         : currentQuestion?.feedback ?? null,
     );
     setAnswers(nextAnswers);
@@ -465,11 +567,21 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       return;
     }
 
+    const attribution = normalizeLifeTestAttribution({
+      ...getCurrentAttribution(),
+      campaignId: resultSession?.campaignId,
+      entryScene: resultSession?.entryScene,
+      channel: resultSession?.channel,
+      regionCode: resultSession?.regionCode,
+      shareCode: resultSession?.shareCode,
+      referrerSessionId: resultSession?.referrerSessionId,
+    });
+
     await postJson(apiPath("/life-test/events"), {
       sessionId: currentSessionId,
       eventName,
       eventData,
-      source: "h5",
+      ...attribution,
     }, options).catch(() => undefined);
   }
 
@@ -478,7 +590,10 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       return;
     }
 
-    await recordEvent("poster_save");
+    await recordEvent("poster_save", {
+      resultCode: result?.code,
+      posterVariant: "base",
+    });
     await saveImageToPhone({
       url: posterUrl,
       previewUrl: posterUrl,
@@ -487,14 +602,32 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   }
 
   async function handleShare(resultType: LifeTestResultType) {
-    await recordEvent("share");
+    const attribution = normalizeLifeTestAttribution({
+      ...getCurrentAttribution(),
+      campaignId: resultSession?.campaignId,
+      channel: resultSession?.channel,
+      regionCode: resultSession?.regionCode,
+      shareCode: resultSession?.shareCode,
+      referrerSessionId: currentSessionId,
+      entryScene: "share_landing",
+    });
+    const pageUrl = appendAttribution(
+      `/life-test/result/${currentSessionId}`,
+      attribution,
+    );
+
+    await recordEvent("share", {
+      resultCode: resultType.code,
+      shareCode: attribution.shareCode,
+      posterVariant: "base",
+    });
     await shareImage({
       title: resultType.shareText,
       description: lifeTestCityConfig.defaultShareDescription,
       imageUrl: posterUrl,
-      pageUrl: appPath(`/life-test/result/${currentSessionId}`),
+      pageUrl,
     });
-    setNotice("已调起分享；如果当前浏览器不支持，链接会自动复制。");
+    setNotice("已调起分享；如果当前浏览器不支持，链接会复制好。");
   }
 
   async function submitLead() {
@@ -505,13 +638,23 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
     setLeadNotice(null);
 
     try {
+      const attribution = normalizeLifeTestAttribution({
+        ...getCurrentAttribution(),
+        campaignId: resultSession?.campaignId,
+        entryScene: resultSession?.entryScene,
+        channel: resultSession?.channel,
+        regionCode: resultSession?.regionCode,
+        shareCode: resultSession?.shareCode,
+        referrerSessionId: resultSession?.referrerSessionId,
+      });
+
       await postJson(apiPath("/life-test/leads"), {
         sessionId: currentSessionId && !isLocalSession(currentSessionId)
           ? currentSessionId
           : undefined,
         leadType,
         ...leadForm,
-        source: "h5",
+        ...attribution,
       });
       setLeadNotice("已提交，大宜宾工作人员后续会联系你。");
       setLeadForm({ name: "", mobile: "", wechat: "", consent: false });
@@ -584,7 +727,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
             <section className="mt-5 flex flex-1 flex-col gap-4">
               <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
                 <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap gap-1.5 opacity-35">
-                  {["装没事", "已读空气", "江边坐哈", "系统盯上你了"].map((item) => (
+                  {["先吃饭", "少点临时安排", "消息太多", "今天不解释"].map((item) => (
                     <span
                       key={item}
                       className="rounded-[8px] border border-white/12 bg-white/5 px-2 py-1 text-[10px] text-white/85"
@@ -693,7 +836,37 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                 </div>
               </header>
 
-              <section className="mt-5">
+              <section className="mt-5 overflow-hidden rounded-[8px] bg-[#123F39] p-3">
+                <Image
+                  src={posterUrl}
+                  alt={`${result.name}结果海报`}
+                  width={1024}
+                  height={1536}
+                  unoptimized
+                  className="aspect-[2/3] w-full rounded-[8px] object-cover"
+                />
+              </section>
+
+              <section className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#0F766E] text-sm font-black text-white"
+                  onClick={() => void handleSavePoster()}
+                >
+                  <Download size={16} />
+                  保存图片
+                </button>
+                <button
+                  type="button"
+                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#173B36] text-sm font-black text-white"
+                  onClick={() => void handleShare(result)}
+                >
+                  <Share2 size={16} />
+                  分享结果
+                </button>
+              </section>
+
+              <section className="mt-6">
                 <p className="text-sm font-black text-[#B7791F]">{result.citySymbol}</p>
                 <h1 className="mt-2 text-4xl font-black leading-tight">{result.name}</h1>
                 <p className="mt-3 text-lg font-bold leading-8 text-[#355A54]">
@@ -736,52 +909,27 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                 ))}
               </section>
 
-              <section className="mt-6 overflow-hidden rounded-[8px] bg-[#123F39] p-3">
-                <Image
-                  src={posterUrl}
-                  alt={`${result.name}结果海报`}
-                  width={1024}
-                  height={1536}
-                  unoptimized
-                  className="aspect-[2/3] w-full rounded-[8px] object-cover"
-                />
-              </section>
-
               <section className="mt-5 grid gap-3">
                 <AdviceBlock
-                  icon={<BriefcaseBusiness size={18} />}
-                  title={result.careerTitle}
-                  body={result.careerAdvice}
+                  icon={<Sparkles size={18} />}
+                  title={result.analysisTitle}
+                  body={result.analysisBody}
                 />
                 <AdviceBlock
                   icon={<HeartHandshake size={18} />}
-                  title={result.loveTitle}
-                  body={result.loveAdvice}
+                  title="你的舒服区"
+                  body={result.comfortZone}
+                />
+                <AdviceBlock
+                  icon={<BriefcaseBusiness size={18} />}
+                  title="你的卡点"
+                  body={result.blindSpot}
                 />
                 <AdviceBlock
                   icon={<MapPinned size={18} />}
-                  title="你的宜宾回血方式"
-                  body={result.lifeAdvice}
+                  title="今天给你一句建议"
+                  body={result.todayAdvice}
                 />
-              </section>
-
-              <section className="mt-5 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#0F766E] text-sm font-black text-white"
-                  onClick={() => void handleSavePoster()}
-                >
-                  <Download size={16} />
-                  保存图片
-                </button>
-                <button
-                  type="button"
-                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-[#173B36] text-sm font-black text-white"
-                  onClick={() => void handleShare(result)}
-                >
-                  <Share2 size={16} />
-                  分享结果
-                </button>
               </section>
 
               <section className="mt-3 grid gap-3">
@@ -797,21 +945,23 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                     )
                   }
                 />
-                <ActionLink
-                  icon={<HeartHandshake size={18} />}
-                  label={result.matchCtaText}
-                  href={result.matchCtaUrl}
-                  onClick={() =>
-                    void recordEvent(
-                      "matchmaker_cta_click",
-                      { resultCode: result.code },
-                      { keepalive: true },
-                    )
-                  }
-                />
+                {!matchmakerSuppressed && (
+                  <ActionLink
+                    icon={<HeartHandshake size={18} />}
+                    label={result.matchCtaText}
+                    href={result.matchCtaUrl}
+                    onClick={() =>
+                      void recordEvent(
+                        "matchmaker_cta_click",
+                        { resultCode: result.code },
+                        { keepalive: true },
+                      )
+                    }
+                  />
+                )}
               </section>
 
-              <section className="mt-3 grid grid-cols-2 gap-3">
+              <section className={`mt-3 grid gap-3 ${matchmakerSuppressed ? "" : "grid-cols-2"}`}>
                 <button
                   type="button"
                   className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white text-sm font-black"
@@ -820,14 +970,16 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                   <UserRound size={16} />
                   岗位推荐
                 </button>
-                <button
-                  type="button"
-                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white text-sm font-black"
-                  onClick={() => setLeadType("matchmaker")}
-                >
-                  <HeartHandshake size={16} />
-                  红娘帮看
-                </button>
+                {!matchmakerSuppressed && (
+                  <button
+                    type="button"
+                    className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white text-sm font-black"
+                    onClick={() => setLeadType("matchmaker")}
+                  >
+                    <HeartHandshake size={16} />
+                    红娘帮看
+                  </button>
+                )}
               </section>
 
               <div className="mt-5 flex gap-3">
@@ -917,10 +1069,10 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
 
           <div className="pb-7">
             <h1 className="max-w-[460px] text-5xl font-black leading-[1.04]">
-              听说你在宜宾表面很正常。系统不信。
+              宜宾精神状态测试
             </h1>
             <p className="mt-4 max-w-[420px] text-lg font-bold leading-8 text-white/88">
-              13 道题，鉴定你的班味、恋爱脑、社交电量和江边回血能力。
+              3 分钟测你最近的工作、关系、社交和行动状态。
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
@@ -928,14 +1080,14 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                 className="flex h-13 items-center justify-center gap-2 rounded-[8px] bg-[#FFE1A3] px-5 text-base font-black text-[#173B36]"
                 onClick={() => void startTest()}
               >
-                开始遭系统看穿
+                开始测试
                 <Sparkles size={18} />
               </button>
               <a
                 href={appPath("/life-test/types")}
                 className="flex h-13 items-center justify-center gap-2 rounded-[8px] bg-white/14 px-5 text-base font-black text-white backdrop-blur"
               >
-                先看精神状态池
+                先看有哪些结果
                 <ChevronRight size={18} />
               </a>
             </div>

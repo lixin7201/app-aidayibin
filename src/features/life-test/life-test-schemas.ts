@@ -1,14 +1,26 @@
 import { z } from "zod";
 
+const nullableString = (max: number) => z.string().max(max).nullish();
+
 export const lifeTestAnswerSchema = z.object({
   questionId: z.string().min(1),
   optionId: z.string().min(1),
 });
 
-export const createLifeTestSessionSchema = z.object({
-  anonymousId: z.string().max(191).optional(),
-  source: z.string().max(64).optional(),
-  campaign: z.string().max(191).optional(),
+const lifeTestAttributionSchema = z.object({
+  source: nullableString(64),
+  campaign: nullableString(191),
+  campaignId: nullableString(191),
+  entryScene: nullableString(64),
+  channel: nullableString(64),
+  regionCode: nullableString(64),
+  shareCode: nullableString(32),
+  referrerSessionId: nullableString(64),
+  posterVariant: nullableString(64),
+});
+
+export const createLifeTestSessionSchema = lifeTestAttributionSchema.extend({
+  anonymousId: nullableString(191),
 });
 
 export const completeLifeTestSessionSchema = z.object({
@@ -25,23 +37,20 @@ export const lifeTestEventSchema = z.object({
       "complete",
       "poster_save",
       "share",
+      "share_landing",
       "job_cta_click",
       "matchmaker_cta_click",
       "lead_submit",
     ]),
   eventData: z.record(z.string(), z.unknown()).optional(),
-  source: z.string().max(64).optional(),
-  campaign: z.string().max(191).optional(),
-});
+}).merge(lifeTestAttributionSchema);
 
 export const createLifeTestLeadSchema = z.object({
-  sessionId: z.string().max(64).optional(),
+  sessionId: nullableString(64),
   leadType: z.enum(["job", "matchmaker", "both"]),
-  name: z.string().max(64).optional(),
-  mobile: z.string().max(32).optional(),
-  wechat: z.string().max(191).optional(),
-  note: z.string().max(500).optional(),
+  name: nullableString(64),
+  mobile: nullableString(32),
+  wechat: nullableString(191),
+  note: nullableString(500),
   consent: z.boolean(),
-  source: z.string().max(64).optional(),
-  campaign: z.string().max(191).optional(),
-});
+}).merge(lifeTestAttributionSchema);

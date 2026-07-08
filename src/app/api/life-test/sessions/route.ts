@@ -15,6 +15,12 @@ export async function POST(request: NextRequest) {
       anonymousId: payload.anonymousId,
       source: payload.source,
       campaign: payload.campaign,
+      campaignId: payload.campaignId,
+      entryScene: payload.entryScene,
+      channel: payload.channel,
+      regionCode: payload.regionCode,
+      shareCode: payload.shareCode,
+      referrerSessionId: payload.referrerSessionId,
       ip: getClientIp(request),
       userAgent: getUserAgent(request),
     });

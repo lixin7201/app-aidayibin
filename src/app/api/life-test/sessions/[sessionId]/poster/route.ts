@@ -21,7 +21,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new Response("Poster not ready", { status: 404 });
     }
 
-    const pageUrl = new URL(`/ai/life-test/result/${sessionId}`, request.url).toString();
+    const pageUrl = new URL(`/ai/life-test/result/${sessionId}`, request.url);
+    if (session.campaignId) pageUrl.searchParams.set("campaign_id", session.campaignId);
+    if (session.entryScene) pageUrl.searchParams.set("entry_scene", "share_landing");
+    if (session.channel) pageUrl.searchParams.set("channel", session.channel);
+    if (session.regionCode) pageUrl.searchParams.set("region_code", session.regionCode);
+    if (session.shareCode) pageUrl.searchParams.set("share_code", session.shareCode);
+    pageUrl.searchParams.set("referrer_session_id", sessionId);
     const currentUser = getSessionFromRequest(request);
     const image = await renderLifeTestPosterJpeg({
       nickname: session.nickname,
@@ -30,7 +36,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         (currentUser?.nickname === session.nickname ? currentUser.avatarUrl : null),
       result: session.result,
       score: session.score,
-      pageUrl,
+      pageUrl: pageUrl.toString(),
     });
 
     return new Response(new Uint8Array(image), {

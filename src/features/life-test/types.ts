@@ -54,6 +54,7 @@ export type LifeTestQuestionOption = {
   id: string;
   label: string;
   text: string;
+  evidenceText: string;
   scores: Partial<LifeTestScores>;
   branchScores?: Partial<Record<LifeTestBranchScoreKey, number>>;
   isEscape?: boolean;
@@ -62,6 +63,9 @@ export type LifeTestQuestionOption = {
 export type LifeTestQuestion = {
   id: string;
   branch: LifeTestQuestionBranch;
+  eventKey: string;
+  sceneType: LifeTestQuestionBranch;
+  evidenceKey: string;
   title: string;
   feedback: string;
   options: LifeTestQuestionOption[];
@@ -87,6 +91,17 @@ export type LifeTestResultType = {
   loveTitle: string;
   loveAdvice: string;
   lifeAdvice: string;
+  analysisTitle: string;
+  analysisBody: string;
+  comfortZone: string;
+  blindSpot: string;
+  todayAdvice: string;
+  evidenceFallbacks: string[];
+  posterTitle: string;
+  posterSubtitle: string;
+  posterTags: string[];
+  posterInsightLines: [string, string];
+  posterSealText: string;
   jobCtaText: string;
   jobCtaUrl: string;
   matchCtaText: string;
@@ -100,6 +115,12 @@ export type LifeTestSessionPayload = {
   id: string;
   nickname: string | null;
   avatarUrl: string | null;
+  campaignId: string | null;
+  entryScene: string | null;
+  channel: string | null;
+  regionCode: string | null;
+  shareCode: string | null;
+  referrerSessionId: string | null;
   status: string;
   answers: LifeTestAnswer[];
   score: LifeTestScoreResult | null;

@@ -33,7 +33,7 @@ export default async function AdminLifeTestPage() {
               Admin
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-normal">
-              宜宾人生搭子测试后台
+              宜宾精神状态测试后台
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -139,10 +139,56 @@ export default async function AdminLifeTestPage() {
           </div>
         </section>
 
+        <section className="mt-6 grid gap-6 xl:grid-cols-3">
+          <RankTable
+            title="区县参与榜"
+            minWidth="860px"
+            headers={["区县", "开始", "完成", "完成率", "分享", "保存", "回流"]}
+            rows={stats.regionStats.map((item) => [
+              item.region,
+              item.starts,
+              item.completes,
+              `${item.completionRate}%`,
+              item.shares,
+              item.posterSaves,
+              item.returnVisits,
+            ])}
+            empty="暂无区县归因数据。"
+          />
+          <RankTable
+            title="渠道榜"
+            minWidth="760px"
+            headers={["渠道", "访问", "开始", "完成", "分享", "留资"]}
+            rows={stats.channelStats.map((item) => [
+              item.channel,
+              item.views,
+              item.starts,
+              item.completes,
+              item.shares,
+              item.leads,
+            ])}
+            empty="暂无渠道归因数据。"
+          />
+          <RankTable
+            title="结果传播榜"
+            minWidth="920px"
+            headers={["结果", "完成", "分享率", "保存率", "招聘率", "红娘率"]}
+            rows={stats.resultPropagation.map((item) => [
+              item.resultName,
+              item.count,
+              `${item.shareRate}%`,
+              `${item.saveRate}%`,
+              `${item.jobClickRate}%`,
+              `${item.matchClickRate}%`,
+            ])}
+            empty="暂无结果传播数据。"
+          />
+        </section>
+
         <section className="mt-6 rounded-[8px] bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">最近测试记录</h2>
           <div className="mt-4 overflow-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[1220px] text-left text-sm">
               <thead className="bg-[#f5f6f3] text-[#65706a]">
                 <tr>
                   <th className="px-3 py-3">时间</th>
@@ -153,6 +199,9 @@ export default async function AdminLifeTestPage() {
                   <th className="px-3 py-3">招聘</th>
                   <th className="px-3 py-3">红娘</th>
                   <th className="px-3 py-3">来源</th>
+                  <th className="px-3 py-3">渠道</th>
+                  <th className="px-3 py-3">区县</th>
+                  <th className="px-3 py-3">分享码</th>
                   <th className="px-3 py-3">重复标记</th>
                 </tr>
               </thead>
@@ -167,6 +216,9 @@ export default async function AdminLifeTestPage() {
                     <td className="px-3 py-3">{item.jobCtaClicks}</td>
                     <td className="px-3 py-3">{item.matchCtaClicks}</td>
                     <td className="px-3 py-3">{item.source ?? "-"}</td>
+                    <td className="px-3 py-3">{item.channel ?? "-"}</td>
+                    <td className="px-3 py-3">{item.regionCode ?? "-"}</td>
+                    <td className="px-3 py-3">{item.shareCode ?? "-"}</td>
                     <td className="px-3 py-3">{item.repeatHigh ? "是" : "否"}</td>
                   </tr>
                 ))}
@@ -214,6 +266,57 @@ function Metric({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-[8px] bg-white p-4 shadow-sm">
       <p className="text-sm text-[#65706a]">{label}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function RankTable({
+  title,
+  headers,
+  rows,
+  empty,
+  minWidth,
+}: {
+  title: string;
+  headers: string[];
+  rows: (string | number)[][];
+  empty: string;
+  minWidth: string;
+}) {
+  return (
+    <div className="rounded-[8px] bg-white p-5 shadow-sm">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="mt-4 overflow-auto">
+        {rows.length === 0 ? (
+          <p className="text-sm text-[#65706a]">{empty}</p>
+        ) : (
+          <table className="w-full text-left text-sm" style={{ minWidth }}>
+            <thead className="bg-[#f5f6f3] text-[#65706a]">
+              <tr>
+                {headers.map((header) => (
+                  <th key={header} className="px-3 py-3">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={`${title}-${index}`} className="border-t border-black/6">
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={`${title}-${index}-${cellIndex}`}
+                      className={`px-3 py-3 ${cellIndex === 0 ? "font-semibold" : ""}`}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

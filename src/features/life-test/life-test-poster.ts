@@ -188,30 +188,15 @@ function renderPosterLines(input: {
     .join("");
 }
 
-function axisSummary(score?: LifeTestScoreResult | null) {
-  if (!score) {
-    return "宜宾精神状态报告";
-  }
-
-  if (score.hiddenTag) {
-    return "隐藏款 / 不接受定义";
-  }
-
-  const career = score.axes.career === "growth" ? "机会派" : "安稳派";
-  const pace = score.axes.pace === "fast" ? "冲刺派" : "松弛派";
-
-  return `${career} / ${pace}`;
-}
-
 function renderPosterKeywordStickers(keywords: string[]) {
   const fills = ["#FFF7E6", "#F7C66A", "#D9F2E9", "#FFD2C4"];
   const rotations = [-5, 3, -3, 4];
 
   return keywords
     .map((keyword, index) => {
-      const x = 100 + index * 166;
-      const y = 1280;
-      const width = 146;
+      const x = 96 + index * 182;
+      const y = 1358;
+      const width = 170;
       const height = 50;
       const centerX = x + width / 2;
       const centerY = y - height / 2;
@@ -226,8 +211,37 @@ function renderPosterKeywordStickers(keywords: string[]) {
           y: y - 10,
           fontSize: 22,
           fill: "#062F2B",
-          maxWidth: 112,
+          maxWidth: 136,
           anchor: "middle",
+        })}
+      </g>`;
+    })
+    .join("");
+}
+
+function renderPosterInsightNotes(lines: [string, string]) {
+  const notes = [
+    { x: 112, y: 1242, rotation: -2, fill: "#FFF7E6" },
+    { x: 526, y: 1242, rotation: 2, fill: "#D9F2E9" },
+  ];
+
+  return lines
+    .map((line, index) => {
+      const note = notes[index];
+
+      return `<g transform="rotate(${note.rotation} ${note.x + 220} ${note.y + 44})">
+        <rect x="${note.x + 8}" y="${note.y + 8}" width="386" height="84" rx="18" fill="#021917" opacity="0.28"/>
+        <rect x="${note.x}" y="${note.y}" width="386" height="84" rx="18" fill="${note.fill}" opacity="0.96"/>
+        <rect x="${note.x}" y="${note.y}" width="386" height="84" rx="18" stroke="#062F2B" stroke-opacity="0.34" stroke-width="2"/>
+        ${renderPosterLines({
+          value: line,
+          x: note.x + 28,
+          y: note.y + 38,
+          fontSize: 22,
+          fill: "#062F2B",
+          maxChars: 13,
+          maxLines: 2,
+          lineHeight: 30,
         })}
       </g>`;
     })
@@ -323,9 +337,9 @@ export function renderLifeTestPosterOverlaySvg(input: {
   pageUrl?: string;
 }) {
   const nickname = input.nickname?.trim() || "大宜宾朋友";
-  const reportOwnerText = `${truncateText(nickname, 8)} 的质检报告`;
-  const slogan = truncateText(input.result.slogan, 34);
-  const keywords = input.result.keywords.slice(0, 4);
+  const reportOwnerText = `${truncateText(nickname, 8)} 的测试报告`;
+  const slogan = truncateText(input.result.posterSubtitle, 34);
+  const keywords = input.result.posterTags.slice(0, 3);
   const footerText = input.pageUrl
     ? "长按保存，发给朋友涮坛子"
     : "打开大宜宾 App，测精神状态";
@@ -383,7 +397,7 @@ export function renderLifeTestPosterOverlaySvg(input: {
   })}
   <path d="M74 244C210 226 346 229 478 242C420 264 226 270 78 258" fill="#F7C66A" opacity="0.78"/>
   ${renderPosterText({
-    value: "系统鉴定已生成",
+    value: "结果已经出来了",
     x: 72,
     y: 294,
     fontSize: 28,
@@ -396,7 +410,7 @@ export function renderLifeTestPosterOverlaySvg(input: {
   <rect x="62" y="902" width="900" height="492" rx="32" stroke="#FFF7E6" stroke-opacity="0.28" stroke-width="2"/>
   <path d="M90 940H306L330 966L306 992H90Z" fill="#F7C66A" opacity="0.96"/>
   ${renderPosterText({
-    value: "系统鉴定",
+    value: "测试结果",
     x: 124,
     y: 976,
     fontSize: 24,
@@ -412,7 +426,7 @@ export function renderLifeTestPosterOverlaySvg(input: {
     maxWidth: 500,
   })}
   ${renderPosterArtText({
-    value: input.result.name,
+    value: input.result.posterTitle,
     x: 100,
     y: 1098,
     fontSize: 80,
@@ -427,7 +441,7 @@ export function renderLifeTestPosterOverlaySvg(input: {
   ${renderPosterLines({
     value: slogan,
     x: 126,
-    y: 1190,
+    y: 1172,
     fontSize: 31,
     fill: "#FFF7E6",
     maxChars: 17,
@@ -435,23 +449,15 @@ export function renderLifeTestPosterOverlaySvg(input: {
     lineHeight: 46,
     opacity: 0.96,
   })}
+  ${renderPosterInsightNotes(input.result.posterInsightLines)}
   ${renderPosterKeywordStickers(keywords)}
-  <path d="M104 1332H520C542 1332 556 1344 556 1360C556 1376 542 1388 520 1388H104C82 1388 68 1376 68 1360C68 1344 82 1332 104 1332Z" fill="#FFF7E6" opacity="0.12"/>
+  <g transform="rotate(-3 802 1364)">
+  <rect x="682" y="1322" width="240" height="90" rx="28" fill="#FFF7E6" opacity="0.96"/>
+  <rect x="696" y="1336" width="212" height="62" rx="20" stroke="#FF785A" stroke-opacity="0.78" stroke-width="3" stroke-dasharray="10 8"/>
   ${renderPosterText({
-    value: axisSummary(input.score),
-    x: 104,
-    y: 1368,
-    fontSize: 24,
-    fill: "#F7C66A",
-    maxWidth: 420,
-  })}
-  <g transform="rotate(-3 802 1334)">
-  <rect x="682" y="1292" width="240" height="90" rx="28" fill="#FFF7E6" opacity="0.96"/>
-  <rect x="696" y="1306" width="212" height="62" rx="20" stroke="#FF785A" stroke-opacity="0.78" stroke-width="3" stroke-dasharray="10 8"/>
-  ${renderPosterText({
-    value: "搜大宜宾",
+    value: input.result.posterSealText,
     x: 802,
-    y: 1332,
+    y: 1362,
     fontSize: 25,
     fill: "#0B3D39",
     maxWidth: 160,
@@ -460,7 +466,7 @@ export function renderLifeTestPosterOverlaySvg(input: {
   ${renderPosterText({
     value: "测精神状态",
     x: 802,
-    y: 1362,
+    y: 1392,
     fontSize: 19,
     fill: "#0B3D39",
     maxWidth: 160,

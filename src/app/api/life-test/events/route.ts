@@ -17,6 +17,13 @@ export async function POST(request: NextRequest) {
       eventData: payload.eventData,
       source: payload.source,
       campaign: payload.campaign,
+      campaignId: payload.campaignId,
+      entryScene: payload.entryScene,
+      channel: payload.channel,
+      regionCode: payload.regionCode,
+      shareCode: payload.shareCode,
+      referrerSessionId: payload.referrerSessionId,
+      posterVariant: payload.posterVariant,
     });
 
     return apiOk({ ok: true });

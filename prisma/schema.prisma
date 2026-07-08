@@ -382,31 +382,37 @@ model GaokaoGenerationOverride {
 }
 
 model LifeTestSession {
-  id               String    @id @default(uuid()) @db.Char(36)
-  user_id          String?   @db.Char(36)
-  app_user_id      String?   @db.VarChar(191)
-  anonymous_id     String?   @db.VarChar(191)
-  nickname         String?   @db.Text
-  avatar_url       String?   @db.Text
-  source           String?   @db.VarChar(64)
-  campaign         String?   @db.VarChar(191)
-  status           String    @default("started") @db.VarChar(32)
-  answers_json     Json?
-  score_json       Json?
-  result_code      String?   @db.VarChar(64)
-  poster_url       String?   @db.Text
-  share_count      Int       @default(0)
-  job_cta_clicks   Int       @default(0)
-  match_cta_clicks Int       @default(0)
-  tie_broken       Boolean   @default(false)
-  repeat_high      Boolean   @default(false)
-  user_agent       String?   @db.Text
-  ip_hash          String?   @db.VarChar(191)
-  created_at       DateTime  @default(now())
-  completed_at     DateTime?
-  updated_at       DateTime  @updatedAt
+  id                  String    @id @default(uuid()) @db.Char(36)
+  user_id             String?   @db.Char(36)
+  app_user_id         String?   @db.VarChar(191)
+  anonymous_id        String?   @db.VarChar(191)
+  nickname            String?   @db.Text
+  avatar_url          String?   @db.Text
+  source              String?   @db.VarChar(64)
+  campaign            String?   @db.VarChar(191)
+  campaign_id         String?   @db.VarChar(191)
+  entry_scene         String?   @db.VarChar(64)
+  channel             String?   @db.VarChar(64)
+  region_code         String?   @db.VarChar(64)
+  share_code          String?   @db.VarChar(32)
+  referrer_session_id String?   @db.Char(36)
+  status              String    @default("started") @db.VarChar(32)
+  answers_json        Json?
+  score_json          Json?
+  result_code         String?   @db.VarChar(64)
+  poster_url          String?   @db.Text
+  share_count         Int       @default(0)
+  job_cta_clicks      Int       @default(0)
+  match_cta_clicks    Int       @default(0)
+  tie_broken          Boolean   @default(false)
+  repeat_high         Boolean   @default(false)
+  user_agent          String?   @db.Text
+  ip_hash             String?   @db.VarChar(191)
+  created_at          DateTime  @default(now())
+  completed_at        DateTime?
+  updated_at          DateTime  @updatedAt
 
-  app_users AppUser? @relation(fields: [user_id], references: [id])
+  app_users AppUser?        @relation(fields: [user_id], references: [id])
   events    LifeTestEvent[]
   leads     LifeTestLead[]
 
@@ -414,49 +420,71 @@ model LifeTestSession {
   @@index([app_user_id, created_at], map: "idx_life_test_sessions_app_user_created")
   @@index([anonymous_id, created_at], map: "idx_life_test_sessions_anon_created")
   @@index([result_code, created_at], map: "idx_life_test_sessions_result_created")
+  @@index([region_code, created_at], map: "idx_life_test_sessions_region_created")
+  @@index([channel, created_at], map: "idx_life_test_sessions_channel_created")
+  @@index([share_code], map: "idx_life_test_sessions_share_code")
+  @@index([referrer_session_id, created_at], map: "idx_life_test_sessions_referrer_created")
   @@map("life_test_sessions")
 }
 
 model LifeTestEvent {
-  id          String   @id @default(uuid()) @db.Char(36)
-  session_id  String?  @db.Char(36)
-  user_id     String?  @db.Char(36)
-  app_user_id String?  @db.VarChar(191)
-  event_name  String   @db.VarChar(64)
-  event_data  Json?
-  source      String?  @db.VarChar(64)
-  campaign    String?  @db.VarChar(191)
-  created_at  DateTime @default(now())
+  id                  String   @id @default(uuid()) @db.Char(36)
+  session_id          String?  @db.Char(36)
+  user_id             String?  @db.Char(36)
+  app_user_id         String?  @db.VarChar(191)
+  event_name          String   @db.VarChar(64)
+  event_data          Json?
+  source              String?  @db.VarChar(64)
+  campaign            String?  @db.VarChar(191)
+  campaign_id         String?  @db.VarChar(191)
+  entry_scene         String?  @db.VarChar(64)
+  channel             String?  @db.VarChar(64)
+  region_code         String?  @db.VarChar(64)
+  share_code          String?  @db.VarChar(32)
+  referrer_session_id String?  @db.Char(36)
+  poster_variant      String?  @db.VarChar(64)
+  created_at          DateTime @default(now())
 
   session   LifeTestSession? @relation(fields: [session_id], references: [id])
   app_users AppUser?         @relation(fields: [user_id], references: [id])
 
   @@index([session_id, created_at], map: "idx_life_test_events_session_created")
   @@index([event_name, created_at], map: "idx_life_test_events_name_created")
+  @@index([region_code, created_at], map: "idx_life_test_events_region_created")
+  @@index([channel, created_at], map: "idx_life_test_events_channel_created")
+  @@index([share_code, created_at], map: "idx_life_test_events_share_code_created")
   @@map("life_test_events")
 }
 
 model LifeTestLead {
-  id          String   @id @default(uuid()) @db.Char(36)
-  session_id  String?  @db.Char(36)
-  user_id     String?  @db.Char(36)
-  app_user_id String?  @db.VarChar(191)
-  result_code String?  @db.VarChar(64)
-  lead_type   String   @db.VarChar(32)
-  name        String?  @db.VarChar(191)
-  mobile      String?  @db.VarChar(32)
-  wechat      String?  @db.VarChar(191)
-  note        String?  @db.Text
-  consent     Boolean  @default(false)
-  source      String?  @db.VarChar(64)
-  campaign    String?  @db.VarChar(191)
-  created_at  DateTime @default(now())
+  id                  String   @id @default(uuid()) @db.Char(36)
+  session_id          String?  @db.Char(36)
+  user_id             String?  @db.Char(36)
+  app_user_id         String?  @db.VarChar(191)
+  result_code         String?  @db.VarChar(64)
+  lead_type           String   @db.VarChar(32)
+  name                String?  @db.VarChar(191)
+  mobile              String?  @db.VarChar(32)
+  wechat              String?  @db.VarChar(191)
+  note                String?  @db.Text
+  consent             Boolean  @default(false)
+  source              String?  @db.VarChar(64)
+  campaign            String?  @db.VarChar(191)
+  campaign_id         String?  @db.VarChar(191)
+  entry_scene         String?  @db.VarChar(64)
+  channel             String?  @db.VarChar(64)
+  region_code         String?  @db.VarChar(64)
+  share_code          String?  @db.VarChar(32)
+  referrer_session_id String?  @db.Char(36)
+  created_at          DateTime @default(now())
 
   session   LifeTestSession? @relation(fields: [session_id], references: [id])
   app_users AppUser?         @relation(fields: [user_id], references: [id])
 
   @@index([session_id, created_at], map: "idx_life_test_leads_session_created")
   @@index([lead_type, created_at], map: "idx_life_test_leads_type_created")
+  @@index([region_code, created_at], map: "idx_life_test_leads_region_created")
+  @@index([channel, created_at], map: "idx_life_test_leads_channel_created")
   @@map("life_test_leads")
 }
 
