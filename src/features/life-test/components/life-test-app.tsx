@@ -787,54 +787,52 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
           </div>
 
           {currentQuestion ? (
-            <section className="mt-3 flex min-h-0 flex-1 flex-col justify-between">
-              <div className="min-h-0 overflow-y-auto pr-1">
-                <div className="grid gap-2.5 pb-3">
-                  <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
-                    <div className="flex items-start gap-2">
-                      <p className="mt-0.5 shrink-0 rounded-[8px] bg-[#F6D06C]/14 px-2 py-1 text-[10px] font-black tracking-[0.08em] text-[#F6D06C]">
-                        Q{String(activeIndex + 1).padStart(2, "0")}
-                      </p>
-                      <h1 className="text-[16px] font-black leading-[1.25] tracking-normal text-balance text-[#F4FFFB]">
-                        {currentQuestion.title}
-                      </h1>
-                    </div>
-                  </article>
-
-                  <div className="grid gap-1.5">
-                    {currentQuestion.options.map((option) => {
-                      const selected = selectedMap.get(currentQuestion.id) === option.id;
-
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          className={`grid min-h-[44px] grid-cols-[26px_1fr] items-center gap-2.5 rounded-[8px] border px-2.5 py-1.5 text-left transition ${
-                            selected
-                              ? "border-[#24D6B4]/80 bg-[#24D6B4]/15 text-[#F4FFFB]"
-                              : "border-white/15 bg-white/7 text-[#F4FFFB]"
-                          }`}
-                          onClick={() => setAnswer(currentQuestion.id, option.id)}
-                        >
-                          <span
-                            className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[8px] text-[11px] font-black ${
-                              selected ? "bg-[#24D6B4] text-[#06211E]" : "bg-white/10 text-[#F6D06C]"
-                            }`}
-                          >
-                            {option.label}
-                          </span>
-                          <span className="min-w-0 text-[13px] font-bold leading-5">
-                            {option.text}
-                          </span>
-                        </button>
-                      );
-                    })}
+            <section className="mt-3 flex min-h-0 flex-1 flex-col">
+              <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-2.5 overflow-y-auto pb-2 pr-1">
+                <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
+                  <div className="flex items-start gap-2">
+                    <p className="mt-0.5 shrink-0 rounded-[8px] bg-[#F6D06C]/14 px-2 py-1 text-[10px] font-black tracking-[0.08em] text-[#F6D06C]">
+                      Q{String(activeIndex + 1).padStart(2, "0")}
+                    </p>
+                    <h1 className="text-[16px] font-black leading-[1.25] tracking-normal text-balance text-[#F4FFFB]">
+                      {currentQuestion.title}
+                    </h1>
                   </div>
+                </article>
+
+                <div className="grid min-h-0 grid-rows-4 gap-1.5">
+                  {currentQuestion.options.map((option) => {
+                    const selected = selectedMap.get(currentQuestion.id) === option.id;
+
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`grid min-h-[44px] grid-cols-[26px_1fr] items-center gap-2.5 rounded-[8px] border px-2.5 py-1.5 text-left transition ${
+                          selected
+                            ? "border-[#24D6B4]/80 bg-[#24D6B4]/15 text-[#F4FFFB]"
+                            : "border-white/15 bg-white/7 text-[#F4FFFB]"
+                        }`}
+                        onClick={() => setAnswer(currentQuestion.id, option.id)}
+                      >
+                        <span
+                          className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[8px] text-[11px] font-black ${
+                            selected ? "bg-[#24D6B4] text-[#06211E]" : "bg-white/10 text-[#F6D06C]"
+                          }`}
+                        >
+                          {option.label}
+                        </span>
+                        <span className="min-w-0 text-[13px] font-bold leading-5">
+                          {option.text}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="mt-2 min-h-[44px] shrink-0">
-                {notice || answerFeedback ? (
+              {notice || answerFeedback ? (
+                <div className="shrink-0 pb-2">
                   <p
                     className={`rounded-[8px] border px-2.5 py-1.5 text-[12px] font-black leading-4 ${
                       notice
@@ -844,12 +842,10 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                   >
                     {notice ?? answerFeedback}
                   </p>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
 
-              <div className="h-0 shrink-0" aria-hidden="true" />
-
-              <div className="mt-2 grid shrink-0 grid-cols-[1fr_1.4fr] gap-3 border-t border-white/10 bg-[#071514] pt-2">
+              <div className="grid shrink-0 grid-cols-[1fr_1.4fr] gap-3 border-t border-white/10 bg-[#071514] pt-2">
                 <button
                   type="button"
                   className="flex h-11 items-center justify-center gap-2 rounded-[8px] border border-white/15 bg-white/7 text-sm font-black text-[#F4FFFB] disabled:opacity-40"
