@@ -9,6 +9,7 @@ import {
   Loader2,
   RefreshCcw,
   Send,
+  Settings2,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -32,11 +33,12 @@ import {
   getRiskPreferenceLabel,
 } from "@/features/gaokao/types";
 import { shareImage } from "@/lib/qfh5-actions";
-import { apiPath, assetPath } from "@/lib/routes";
+import { apiPath, appPath, assetPath } from "@/lib/routes";
 
 type CurrentUserProfile = {
   nickname: string;
   avatarUrl: string | null;
+  isGaokaoAdmin?: boolean;
 };
 
 type Props = {
@@ -264,12 +266,15 @@ export function GaokaoAssistantApp({
           nickname?: string;
           avatar_url?: string | null;
           avatarUrl?: string | null;
+          is_gaokao_admin?: boolean;
         };
       };
       setUser({
         nickname: payload.user?.nickname ?? detail?.nickname ?? "大宜宾用户",
         avatarUrl:
           payload.user?.avatar_url ?? payload.user?.avatarUrl ?? detail?.avatarUrl ?? null,
+        isGaokaoAdmin:
+          payload.user?.is_gaokao_admin ?? detail?.isGaokaoAdmin ?? false,
       });
     }
 
@@ -498,14 +503,25 @@ export function GaokaoAssistantApp({
         ) : null}
 
         {generationStatus.isUnlimitedTestUser ? (
-          <button
-            type="button"
-            onClick={resetForNewProfile}
-            className="mt-3 inline-flex h-9 items-center gap-1 rounded-[8px] bg-white px-3 text-sm font-black text-[#1769e8] shadow-sm"
-          >
-            <RefreshCcw size={15} />
-            重新填写
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={resetForNewProfile}
+              className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-white px-3 text-sm font-black text-[#1769e8] shadow-sm"
+            >
+              <RefreshCcw size={15} />
+              重新填写
+            </button>
+            {user?.isGaokaoAdmin ? (
+              <a
+                href={appPath("/gaokao/admin")}
+                className="inline-flex h-9 items-center gap-1 rounded-[8px] bg-[#101828] px-3 text-sm font-black text-white shadow-sm"
+              >
+                <Settings2 size={15} />
+                管理
+              </a>
+            ) : null}
+          </div>
         ) : null}
 
         {visibleReport ? (

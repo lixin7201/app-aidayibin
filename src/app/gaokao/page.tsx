@@ -1,5 +1,6 @@
 import { getStoredSessionFromCookies } from "@/features/auth/session";
 import { GaokaoAssistantApp } from "@/features/gaokao/gaokao-app";
+import { isGaokaoAdminAppUserId } from "@/features/gaokao/gaokao-admin-auth";
 import {
   getGaokaoDataStatus,
   getGaokaoGenerationStatus,
@@ -33,6 +34,7 @@ export default async function GaokaoPage() {
           ? {
               nickname: user.nickname,
               avatarUrl: user.avatarUrl,
+              isGaokaoAdmin: isGaokaoAdminAppUserId(user.appUserId),
             }
           : null
       }

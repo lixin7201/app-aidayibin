@@ -1,16 +1,22 @@
 # 大宜宾 AI 能力平台 H5 MVP
 
 这是一个面向大宜宾 App 的 AI 能力平台 H5 项目。  
-当前包含“个人展示面生成器”和“AI 算命”两个大栏目；AI 算命下包含 AI 看手相、AI 看面相。后续还可以扩展 AI 恋爱训练营、AI 聊天等更多功能。  
-它支持：模板选择、照片上传、AI 生成、历史记录、下载分享删除、管理后台、R2 转存、MySQL 数据存储。
+当前包含“个人展示面生成器”、AI 算命、高考志愿助手和“宜宾人生搭子测试”等 H5 能力；AI 算命下包含 AI 看手相、AI 看面相。后续还可以扩展 AI 恋爱训练营、AI 聊天等更多功能。  
+它支持：模板选择、照片上传、AI 生成、趣味测试、历史记录、下载分享删除、管理后台、R2 转存、MySQL 数据存储。
 
 如果你是后续接手的人，先看：
 
+0. Obsidian 项目卡：`/Users/lixin/.openclaw/workspace/knowledge/09-项目开发/项目卡-app-aidayibin.md`
 1. `docs/project-handoff.md`
 2. `docs/development-red-lines-and-deployment.md`
 3. `docs/env-local-setup.md`
 4. `docs/templates.md`
 5. `docs/ai-fortune-requirements.md`
+6. `docs/life-test-requirements-2026-07-07.md`
+
+任何 AI 新开窗口、子代理或后续开发者接手时，第一动作必须读取 Obsidian 项目卡。读完项目卡里的 `PRD 与验收标准`、`Evaluator 挑刺标准`、`聊天记录逐条执行清单`、`开发前检索路线` 和最新 `开发记录` 后，才能改代码。
+
+新增功能、修复问题、调整部署或迁移数据后，必须把本次目标、改动、验证结果、遗留风险和下一步 handoff 回写到知识库项目卡。不要只留在聊天记录里。发现已有未记录改动时，先看 `git status`，再补录或询问用户。
 
 ## 技术栈
 
@@ -34,6 +40,7 @@ npm run dev
 
 - 用户端：`http://localhost:3000`
 - 管理后台：`http://localhost:3000/admin`
+- 宜宾人生搭子测试：`http://localhost:3000/ai/life-test`（若 dev server 自动换端口，以终端输出为准）
 
 ## 数据库初始化
 
@@ -153,7 +160,7 @@ tar -tzf "$latest" | grep '.next/node_modules'
 - 监听地址：`0.0.0.0`
 - 生产环境变量：`NODE_ENV=production`
 - 对外 base path：`/ai`
-- 健康检查：`http://127.0.0.1:3001/ai/photo`、`http://127.0.0.1:3001/ai/fortune`
+- 健康检查：`http://127.0.0.1:3001/ai/photo`、`http://127.0.0.1:3001/ai/fortune`、`http://127.0.0.1:3001/ai/life-test`
 - 部署包位置：上传到 `/www/wwwroot/ai`
 - 部署包命名：`app-aidayibin-deploy-YYYYMMDD-HHMMSS.tar.gz`，执行命令时必须替换成真实包名，例如 `app-aidayibin-deploy-20260516-172953.tar.gz`
 
@@ -188,6 +195,7 @@ sleep 5
 
 curl -I http://127.0.0.1:3001/ai/photo
 curl -I http://127.0.0.1:3001/ai/fortune
+curl -I http://127.0.0.1:3001/ai/life-test
 pm2 list
 ```
 

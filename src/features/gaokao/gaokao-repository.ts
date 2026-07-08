@@ -11,6 +11,7 @@ import type {
   GaokaoReportListItem,
   GaokaoSubjectType,
 } from "@/features/gaokao/types";
+import { isGaokaoAdminAppUserId } from "@/features/gaokao/gaokao-admin-auth";
 import { getGaokaoRegionProvinces } from "@/features/gaokao/gaokao-profile";
 import { createEmptyGaokaoProfile } from "@/features/gaokao/types";
 import { signResultShareToken } from "@/lib/auth/result-share-token";
@@ -1078,11 +1079,16 @@ function getGenerationMessage(input: {
   totalReports: number;
   activeReports: number;
   unlimited: boolean;
+  resetAt: Date | null;
 }) {
   if (input.unlimited) {
     return input.activeReports > 0
       ? "测试账号已开启不限次数生成。当前有报告，可查看、分享或删除后继续生成。"
       : "测试账号已开启不限次数生成，可以继续生成高考志愿初筛报告。";
+  }
+
+  if (input.resetAt && input.totalReports === 0) {
+    return "管理员已重置生成机会，可以重新生成一份志愿初筛报告。";
   }
 
   if (input.activeReports > 0) {
@@ -1102,9 +1108,10 @@ function getGenerationMessage(input: {
 
 const builtInUnlimitedGaokaoTestAppUserIds = new Set(["734275"]);
 
-function isUnlimitedGaokaoTestUser(input: {
+export function isUnlimitedGaokaoUser(input: {
   userId: string;
   appUserId: string | null;
+  override?: { is_unlimited: boolean } | null;
 }) {
   const configuredIds = (config.GAOKAO_UNLIMITED_TEST_USER_IDS ?? "")
     .split(/[,\s]+/)
@@ -1112,6 +1119,8 @@ function isUnlimitedGaokaoTestUser(input: {
     .filter(Boolean);
 
   return (
+    Boolean(input.override?.is_unlimited) ||
+    isGaokaoAdminAppUserId(input.appUserId) ||
     configuredIds.includes(input.userId) ||
     Boolean(input.appUserId && configuredIds.includes(input.appUserId)) ||
     Boolean(
@@ -1124,17 +1133,27 @@ function isUnlimitedGaokaoTestUser(input: {
 export async function getGaokaoGenerationStatus(
   userId: string,
 ): Promise<GaokaoGenerationStatus> {
-  const [totalReports, activeReports, user] = await Promise.all([
-    prisma.gaokaoReport.count({ where: { user_id: userId } }),
-    prisma.gaokaoReport.count({ where: { user_id: userId, deleted_at: null } }),
+  const [user, override] = await Promise.all([
     prisma.appUser.findUnique({
       where: { id: userId },
       select: { app_user_id: true },
     }),
+    prisma.gaokaoGenerationOverride.findUnique({
+      where: { user_id: userId },
+      select: { is_unlimited: true, reset_at: true },
+    }),
   ]);
-  const unlimited = isUnlimitedGaokaoTestUser({
+  const reportWhere = override?.reset_at
+    ? { user_id: userId, created_at: { gte: override.reset_at } }
+    : { user_id: userId };
+  const [totalReports, activeReports] = await Promise.all([
+    prisma.gaokaoReport.count({ where: reportWhere }),
+    prisma.gaokaoReport.count({ where: { ...reportWhere, deleted_at: null } }),
+  ]);
+  const unlimited = isUnlimitedGaokaoUser({
     userId,
     appUserId: user?.app_user_id ?? null,
+    override,
   });
 
   return {
@@ -1143,7 +1162,12 @@ export async function getGaokaoGenerationStatus(
     deletedReports: Math.max(0, totalReports - activeReports),
     canGenerate: unlimited || (activeReports === 0 && totalReports < 2),
     isUnlimitedTestUser: unlimited,
-    message: getGenerationMessage({ totalReports, activeReports, unlimited }),
+    message: getGenerationMessage({
+      totalReports,
+      activeReports,
+      unlimited,
+      resetAt: override?.reset_at ?? null,
+    }),
   };
 }
 

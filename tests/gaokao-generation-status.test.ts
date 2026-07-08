@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   count: vi.fn(),
   findUnique: vi.fn(),
+  findOverride: vi.fn(),
 }));
 
 vi.mock("@/lib/config", () => ({
@@ -16,6 +17,9 @@ vi.mock("@/lib/db/prisma", () => ({
     appUser: {
       findUnique: mocks.findUnique,
     },
+    gaokaoGenerationOverride: {
+      findUnique: mocks.findOverride,
+    },
     gaokaoReport: {
       count: mocks.count,
     },
@@ -28,7 +32,9 @@ describe("gaokao generation status", () => {
   beforeEach(() => {
     mocks.count.mockReset();
     mocks.findUnique.mockReset();
+    mocks.findOverride.mockReset();
     mocks.findUnique.mockResolvedValue(null);
+    mocks.findOverride.mockResolvedValue(null);
   });
 
   it("allows a whitelisted test user to generate after two deleted reports", async () => {
@@ -64,5 +70,25 @@ describe("gaokao generation status", () => {
     const status = await getGaokaoGenerationStatus("normal-user-id");
 
     expect(status.canGenerate).toBe(false);
+  });
+
+  it("allows a reset user to generate when no reports exist after reset", async () => {
+    const resetAt = new Date("2026-06-29T00:00:00.000Z");
+    mocks.findUnique.mockResolvedValueOnce({ app_user_id: "normal-app-user-id" });
+    mocks.findOverride.mockResolvedValueOnce({
+      is_unlimited: false,
+      reset_at: resetAt,
+    });
+    mocks.count
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+
+    const status = await getGaokaoGenerationStatus("normal-user-id");
+
+    expect(status.canGenerate).toBe(true);
+    expect(status.message).toContain("管理员已重置");
+    expect(mocks.count).toHaveBeenCalledWith({
+      where: { user_id: "normal-user-id", created_at: { gte: resetAt } },
+    });
   });
 });

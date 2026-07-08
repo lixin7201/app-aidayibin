@@ -17,10 +17,14 @@ model AppUser {
   updated_at   DateTime  @updatedAt
   last_seen_at DateTime?
 
-  generation_tasks         GenerationTask[]
-  fortune_generation_tasks FortuneGenerationTask[]
-  gaokao_reports           GaokaoReport[]
-  daily_usage              DailyUsage[]
+  generation_tasks            GenerationTask[]
+  fortune_generation_tasks    FortuneGenerationTask[]
+  gaokao_reports              GaokaoReport[]
+  gaokao_generation_overrides GaokaoGenerationOverride[]
+  life_test_sessions          LifeTestSession[]
+  life_test_events            LifeTestEvent[]
+  life_test_leads             LifeTestLead[]
+  daily_usage                 DailyUsage[]
 
   @@map("app_users")
 }
@@ -359,4 +363,114 @@ model GaokaoReport {
 
   @@index([user_id, created_at], map: "idx_gaokao_reports_user_created")
   @@map("gaokao_reports")
+}
+
+model GaokaoGenerationOverride {
+  id                     String    @id @default(uuid()) @db.Char(36)
+  user_id                String    @unique @db.Char(36)
+  is_unlimited           Boolean   @default(false)
+  reset_at               DateTime?
+  note                   String?   @db.Text
+  updated_by_app_user_id String?   @db.VarChar(191)
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  app_users AppUser @relation(fields: [user_id], references: [id])
+
+  @@index([is_unlimited], map: "idx_gaokao_generation_overrides_unlimited")
+  @@map("gaokao_generation_overrides")
+}
+
+model LifeTestSession {
+  id               String    @id @default(uuid()) @db.Char(36)
+  user_id          String?   @db.Char(36)
+  app_user_id      String?   @db.VarChar(191)
+  anonymous_id     String?   @db.VarChar(191)
+  nickname         String?   @db.Text
+  avatar_url       String?   @db.Text
+  source           String?   @db.VarChar(64)
+  campaign         String?   @db.VarChar(191)
+  status           String    @default("started") @db.VarChar(32)
+  answers_json     Json?
+  score_json       Json?
+  result_code      String?   @db.VarChar(64)
+  poster_url       String?   @db.Text
+  share_count      Int       @default(0)
+  job_cta_clicks   Int       @default(0)
+  match_cta_clicks Int       @default(0)
+  tie_broken       Boolean   @default(false)
+  repeat_high      Boolean   @default(false)
+  user_agent       String?   @db.Text
+  ip_hash          String?   @db.VarChar(191)
+  created_at       DateTime  @default(now())
+  completed_at     DateTime?
+  updated_at       DateTime  @updatedAt
+
+  app_users AppUser? @relation(fields: [user_id], references: [id])
+  events    LifeTestEvent[]
+  leads     LifeTestLead[]
+
+  @@index([user_id, created_at], map: "idx_life_test_sessions_user_created")
+  @@index([app_user_id, created_at], map: "idx_life_test_sessions_app_user_created")
+  @@index([anonymous_id, created_at], map: "idx_life_test_sessions_anon_created")
+  @@index([result_code, created_at], map: "idx_life_test_sessions_result_created")
+  @@map("life_test_sessions")
+}
+
+model LifeTestEvent {
+  id          String   @id @default(uuid()) @db.Char(36)
+  session_id  String?  @db.Char(36)
+  user_id     String?  @db.Char(36)
+  app_user_id String?  @db.VarChar(191)
+  event_name  String   @db.VarChar(64)
+  event_data  Json?
+  source      String?  @db.VarChar(64)
+  campaign    String?  @db.VarChar(191)
+  created_at  DateTime @default(now())
+
+  session   LifeTestSession? @relation(fields: [session_id], references: [id])
+  app_users AppUser?         @relation(fields: [user_id], references: [id])
+
+  @@index([session_id, created_at], map: "idx_life_test_events_session_created")
+  @@index([event_name, created_at], map: "idx_life_test_events_name_created")
+  @@map("life_test_events")
+}
+
+model LifeTestLead {
+  id          String   @id @default(uuid()) @db.Char(36)
+  session_id  String?  @db.Char(36)
+  user_id     String?  @db.Char(36)
+  app_user_id String?  @db.VarChar(191)
+  result_code String?  @db.VarChar(64)
+  lead_type   String   @db.VarChar(32)
+  name        String?  @db.VarChar(191)
+  mobile      String?  @db.VarChar(32)
+  wechat      String?  @db.VarChar(191)
+  note        String?  @db.Text
+  consent     Boolean  @default(false)
+  source      String?  @db.VarChar(64)
+  campaign    String?  @db.VarChar(191)
+  created_at  DateTime @default(now())
+
+  session   LifeTestSession? @relation(fields: [session_id], references: [id])
+  app_users AppUser?         @relation(fields: [user_id], references: [id])
+
+  @@index([session_id, created_at], map: "idx_life_test_leads_session_created")
+  @@index([lead_type, created_at], map: "idx_life_test_leads_type_created")
+  @@map("life_test_leads")
+}
+
+model LifeTestResultAsset {
+  id          String   @id @default(uuid()) @db.Char(36)
+  result_code String   @db.VarChar(64)
+  asset_type  String   @db.VarChar(32)
+  image_url   String   @db.Text
+  prompt      String?  @db.Text
+  version     Int      @default(1)
+  enabled     Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([result_code, asset_type, enabled], map: "idx_life_test_result_assets_lookup")
+  @@map("life_test_result_assets")
 }

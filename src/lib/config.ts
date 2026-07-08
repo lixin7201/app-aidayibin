@@ -53,6 +53,7 @@ const envSchema = z.object({
     z.coerce.number().int().positive().max(60_000).default(15_000),
   ),
   GAOKAO_UNLIMITED_TEST_USER_IDS: optionalString,
+  GAOKAO_ADMIN_APP_USER_IDS: optionalString,
   WECHAT_APP_ID: optionalString,
   WECHAT_APP_SECRET: optionalString,
   WECHAT_OAUTH_REDIRECT_URL: optionalUrl,

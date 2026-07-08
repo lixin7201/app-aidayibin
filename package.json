@@ -20,6 +20,7 @@
     "worker:poll": "RUN_WORKER_ONCE=true tsx --env-file=.env.local src/workers/poll-generation-tasks.ts",
     "worker:cleanup": "RUN_WORKER_ONCE=true tsx --env-file=.env.local src/workers/cleanup-temp-images.ts",
     "migrate:images": "tsx --env-file=.env.local scripts/migrate-r2-images-to-aliyun.ts",
+    "life-test:generate-posters": "NODE_OPTIONS=--use-env-proxy tsx --env-file=.env.local scripts/generate-life-test-poster-bases.ts",
     "templates:generate-covers": "tsx --env-file=.env.local scripts/generate-template-covers.ts",
     "r2:test": "tsx --env-file=.env.local scripts/test-r2-connection.ts"
   },

@@ -6,7 +6,7 @@
 
 以后每次执行修改后，请详细说下在阿里云的部署步骤指令，一段发给项目负责人。
 
-这段部署指令必须包含：上传哪个压缩包、进入哪个目录、是否需要清理 `.next`、是否需要安装依赖、是否需要执行 `npm run db:generate`、如何重启 PM2、如何用 `curl` 验证 `/ai/photo` 和 `/ai/fortune`。
+这段部署指令必须包含：上传哪个压缩包、进入哪个目录、是否需要清理 `.next`、是否需要安装依赖、是否需要执行 `npm run db:generate`、如何重启 PM2、如何用 `curl` 验证 `/ai/photo`、`/ai/fortune` 和新增 H5 入口。
 
 ## 最近更新记录
 
@@ -64,6 +64,7 @@ sleep 5
 
 curl -I http://127.0.0.1:3001/ai/photo
 curl -I http://127.0.0.1:3001/ai/fortune
+curl -I http://127.0.0.1:3001/ai/life-test
 pm2 list
 ```
 
