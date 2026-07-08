@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
 
 import {
   buildLifeTestQuestionFlow,
@@ -195,6 +197,24 @@ describe("life test scoring", () => {
       expect(result.posterTags).toHaveLength(3);
       expect(result.posterInsightLines).toHaveLength(2);
       expect(result.posterSealText).toBeTruthy();
+    }
+  });
+
+  it("has lightweight static thumbnails for the all-types grid", async () => {
+    for (const result of Object.values(lifeTestResults)) {
+      const thumbnailPath = path.join(
+        process.cwd(),
+        "public/life-test/type-thumbs",
+        `${result.code}.webp`,
+      );
+
+      expect(existsSync(thumbnailPath)).toBe(true);
+      expect(statSync(thumbnailPath).size).toBeLessThan(8 * 1024);
+
+      const metadata = await sharp(thumbnailPath).metadata();
+      expect(metadata.format).toBe("webp");
+      expect(metadata.width).toBe(128);
+      expect(metadata.height).toBe(192);
     }
   });
 

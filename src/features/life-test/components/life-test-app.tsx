@@ -102,8 +102,6 @@ const branchLabels: Record<LifeTestQuestionBranch, string> = {
   local: "本地生活题",
   final: "最后收束题",
 };
-const progressLabels = ["工作安全感", "关系节奏", "社交电量", "行动方式"];
-
 function getStoredAnonymousId() {
   let id = window.localStorage.getItem(anonymousStorageKey);
 
@@ -720,7 +718,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   if (mode === "play") {
     return (
       <main className="min-h-screen bg-[radial-gradient(circle_at_50%_-10%,rgba(36,214,180,0.28),transparent_36%),radial-gradient(circle_at_10%_18%,rgba(255,91,60,0.16),transparent_28%),linear-gradient(145deg,#061312_0%,#0a1919_46%,#091013_100%)] text-[#F4FFFB]">
-        <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col overflow-hidden border-x border-white/10 bg-[#071514] px-4 py-4 shadow-2xl">
+        <div className="mx-auto flex h-[100dvh] min-h-screen w-full max-w-[430px] flex-col overflow-hidden border-x border-white/10 bg-[#071514] px-4 py-3 shadow-2xl">
           <header className="flex min-h-10 items-center justify-between text-xs tracking-[0.08em] text-white/80">
             <button
               type="button"
@@ -745,26 +743,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
             </div>
           </header>
 
-          <div className="mt-4 grid grid-cols-4 gap-2">
-            {progressLabels.map((label, index) => (
-              <div key={label} className="min-w-0 text-[10px] font-bold text-[#A2BBB4]">
-                <span>{label}</span>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/8">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#24D6B4] to-[#6DB7FF]"
-                    style={{
-                      width: `${Math.max(
-                        10,
-                        Math.min(100, ((activeIndex + 1 + index) / questionFlow.length) * 86),
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/8">
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
             <div
               className="h-full rounded-full bg-gradient-to-r from-[#FF5B3C] via-[#F6D06C] to-[#24D6B4] transition-all"
               style={{
@@ -774,76 +753,68 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
           </div>
 
           {currentQuestion ? (
-            <section className="mt-5 flex flex-1 flex-col gap-4">
-              <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
-                <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap gap-1.5 opacity-35">
-                  {(currentQuestion.tags?.slice(0, 4) ?? [
-                    "今天状态",
-                    "少点消耗",
-                    "说清楚",
-                    "慢慢来",
-                  ]).map((item) => (
-                    <span
-                      key={item}
-                      className="rounded-[8px] border border-white/12 bg-white/5 px-2 py-1 text-[10px] text-white/85"
-                    >
-                      {item}
-                    </span>
-                  ))}
+            <section className="mt-3 flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className="grid gap-2.5 pb-3">
+                  <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
+                    <div className="flex items-start gap-2">
+                      <p className="mt-0.5 shrink-0 rounded-[8px] bg-[#F6D06C]/14 px-2 py-1 text-[10px] font-black tracking-[0.08em] text-[#F6D06C]">
+                        Q{String(activeIndex + 1).padStart(2, "0")}
+                      </p>
+                      <h1 className="text-[16px] font-black leading-[1.25] tracking-normal text-balance text-[#F4FFFB]">
+                        {currentQuestion.title}
+                      </h1>
+                    </div>
+                  </article>
+
+                  <div className="grid gap-1.5">
+                    {currentQuestion.options.map((option) => {
+                      const selected = selectedMap.get(currentQuestion.id) === option.id;
+
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={`grid min-h-[44px] grid-cols-[26px_1fr] items-center gap-2.5 rounded-[8px] border px-2.5 py-1.5 text-left transition ${
+                            selected
+                              ? "border-[#24D6B4]/80 bg-[#24D6B4]/15 text-[#F4FFFB]"
+                              : "border-white/15 bg-white/7 text-[#F4FFFB]"
+                          }`}
+                          onClick={() => setAnswer(currentQuestion.id, option.id)}
+                        >
+                          <span
+                            className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[8px] text-[11px] font-black ${
+                              selected ? "bg-[#24D6B4] text-[#06211E]" : "bg-white/10 text-[#F6D06C]"
+                            }`}
+                          >
+                            {option.label}
+                          </span>
+                          <span className="min-w-0 text-[13px] font-bold leading-5">
+                            {option.text}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <p className="pt-13 text-xs font-black tracking-[0.08em] text-[#F6D06C]">
-                  Q{String(activeIndex + 1).padStart(2, "0")}
-                </p>
-                <h1 className="mt-2 text-[27px] font-black leading-[1.18] tracking-normal text-balance text-[#F4FFFB]">
-                  {currentQuestion.title}
-                </h1>
-              </article>
-
-              <div className="grid gap-2.5">
-                {currentQuestion.options.map((option) => {
-                  const selected = selectedMap.get(currentQuestion.id) === option.id;
-
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={`grid min-h-[62px] grid-cols-[32px_1fr] items-center gap-3 rounded-[8px] border px-3 py-3 text-left transition ${
-                        selected
-                          ? "border-[#24D6B4]/80 bg-[#24D6B4]/15 text-[#F4FFFB]"
-                          : "border-white/15 bg-white/7 text-[#F4FFFB]"
-                      }`}
-                      onClick={() => setAnswer(currentQuestion.id, option.id)}
-                    >
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-sm font-black ${
-                          selected ? "bg-[#24D6B4] text-[#06211E]" : "bg-white/10 text-[#F6D06C]"
-                        }`}
-                      >
-                        {option.label}
-                      </span>
-                      <span className="min-w-0 text-[15px] font-bold leading-6">
-                        {option.text}
-                      </span>
-                    </button>
-                  );
-                })}
               </div>
 
-              {notice && (
-                <p className="rounded-[8px] border border-[#F6D06C]/30 bg-[#F6D06C]/12 px-3 py-2 text-sm font-bold text-[#FFE1A3]">
-                  {notice}
-                </p>
-              )}
-              {answerFeedback && (
-                <p className="rounded-[8px] border border-[#FF5B3C]/35 bg-[linear-gradient(135deg,rgba(255,91,60,0.13),rgba(36,214,180,0.08)),rgba(12,28,27,0.88)] px-3 py-3 text-sm font-black leading-6 text-[#D6EBE4]">
-                  {answerFeedback}
+              {(notice || answerFeedback) && (
+                <p
+                  className={`mt-2 line-clamp-2 shrink-0 rounded-[8px] border px-2.5 py-1.5 text-[12px] font-black leading-4 ${
+                    notice
+                      ? "border-[#F6D06C]/30 bg-[#F6D06C]/12 text-[#FFE1A3]"
+                      : "border-[#FF5B3C]/35 bg-[linear-gradient(135deg,rgba(255,91,60,0.13),rgba(36,214,180,0.08)),rgba(12,28,27,0.88)] text-[#D6EBE4]"
+                  }`}
+                >
+                  {notice ?? answerFeedback}
                 </p>
               )}
 
-              <div className="mt-auto grid grid-cols-[1fr_1.4fr] gap-3 pt-4">
+              <div className="grid shrink-0 grid-cols-[1fr_1.4fr] gap-3 border-t border-white/10 bg-[#071514] pt-2">
                 <button
                   type="button"
-                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] border border-white/15 bg-white/7 text-sm font-black text-[#F4FFFB] disabled:opacity-40"
+                  className="flex h-11 items-center justify-center gap-2 rounded-[8px] border border-white/15 bg-white/7 text-sm font-black text-[#F4FFFB] disabled:opacity-40"
                   onClick={goPrevious}
                   disabled={activeIndex === 0}
                 >
@@ -852,7 +823,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                 </button>
                 <button
                   type="button"
-                  className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-gradient-to-r from-[#24D6B4] to-[#9DF3DF] text-sm font-black text-[#06211E] shadow-[0_14px_34px_rgba(36,214,180,0.22)]"
+                  className="flex h-11 items-center justify-center gap-2 rounded-[8px] bg-gradient-to-r from-[#24D6B4] to-[#9DF3DF] text-sm font-black text-[#06211E] shadow-[0_14px_34px_rgba(36,214,180,0.22)]"
                   onClick={goNext}
                 >
                   {activeIndex === questionFlow.length - 1 ? "生成报告" : "下一题"}
@@ -1019,20 +990,6 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                     )
                   }
                 />
-                {!matchmakerSuppressed && (
-                  <ActionLink
-                    icon={<HeartHandshake size={18} />}
-                    label={result.matchCtaText}
-                    href={result.matchCtaUrl}
-                    onClick={() =>
-                      void recordEvent(
-                        "matchmaker_cta_click",
-                        { resultCode: result.code },
-                        { keepalive: true },
-                      )
-                    }
-                  />
-                )}
               </section>
 
               <section className={`mt-3 grid gap-3 ${matchmakerSuppressed ? "" : "grid-cols-2"}`}>
@@ -1048,7 +1005,14 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                   <button
                     type="button"
                     className="flex h-12 items-center justify-center gap-2 rounded-[8px] bg-white text-sm font-black"
-                    onClick={() => setLeadType("matchmaker")}
+                    onClick={() => {
+                      void recordEvent(
+                        "matchmaker_cta_click",
+                        { resultCode: result.code },
+                        { keepalive: true },
+                      );
+                      setLeadType("matchmaker");
+                    }}
                   >
                     <HeartHandshake size={16} />
                     红娘帮看
@@ -1315,12 +1279,13 @@ function TypesView() {
             <article key={item.code} className="rounded-[8px] bg-white p-4">
               <div className="flex gap-3">
                 <Image
-                  src={appPath(`/life-test/mock-poster/${item.code}`)}
+                  src={appPath(`/life-test/type-thumbs/${item.code}.webp`)}
                   alt={`${item.name}海报缩略图`}
                   width={128}
                   height={192}
+                  loading="lazy"
                   unoptimized
-                  className="h-24 w-16 rounded-[8px] object-cover"
+                  className="h-24 w-16 rounded-[8px] bg-[#E2F4EC] object-cover"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] font-black text-[#B7791F]">
