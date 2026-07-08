@@ -22,6 +22,7 @@ import { lifeTestCityConfig } from "@/features/life-test/config/city";
 import {
   buildLifeTestQuestionFlow,
   getLifeTestEscapeState,
+  getLifeTestQuestionById,
   isLifeTestMatchmakerSuppressed,
   lifeTestQuestionCount,
 } from "@/features/life-test/config/questions";
@@ -88,16 +89,17 @@ const attributionStorageKey = "dayibin-life-test-attribution-v1";
 const sessionStoragePrefix = "dayibin-life-test-session-v1:";
 const heroImage = assetPath("/templates/yibin-night-cinematic.png");
 const branchLabels: Record<LifeTestQuestionBranch, string> = {
-  core: "核心筛查题",
-  work: "打工班味线",
-  job: "招聘换坑线",
-  love: "红娘恋爱线",
-  social: "社交电量线",
-  recovery: "休息恢复线",
-  antiRoutine: "反骨隐藏线",
-  local: "本地浓度线",
-  final: "命运暴击题",
+  core: "状态起步题",
+  work: "工作边界题",
+  job: "机会选择题",
+  love: "关系节奏题",
+  social: "社交电量题",
+  recovery: "休息恢复题",
+  antiRoutine: "不想被催题",
+  local: "本地生活题",
+  final: "最后收束题",
 };
+const progressLabels = ["工作安全感", "关系节奏", "社交电量", "行动方式"];
 
 function getStoredAnonymousId() {
   let id = window.localStorage.getItem(anonymousStorageKey);
@@ -264,6 +266,38 @@ function buildResultMetrics(score: LifeTestScoreResult) {
   ];
 }
 
+function buildResultEvidenceItems(answers: LifeTestAnswer[], fallbacks: string[]) {
+  const items: Array<{ id: string; tag: string; text: string }> = [];
+  const seenTexts = new Set<string>();
+
+  for (const answer of answers) {
+    const question = getLifeTestQuestionById(answer.questionId);
+    const selected = question?.options.find((option) => option.id === answer.optionId);
+    const text = selected?.evidenceText;
+
+    if (!text || seenTexts.has(text)) {
+      continue;
+    }
+
+    seenTexts.add(text);
+    items.push({
+      id: `${answer.questionId}:${answer.optionId}`,
+      tag: question?.tags?.[0] ?? branchLabels[question?.branch ?? "core"],
+      text,
+    });
+  }
+
+  if (items.length > 0) {
+    return items.slice(0, 4);
+  }
+
+  return fallbacks.slice(0, 3).map((text, index) => ({
+    id: `fallback-${index}`,
+    tag: "结果线索",
+    text,
+  }));
+}
+
 export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
   const [user, setUser] = useState(currentUser);
   const [activeSession, setActiveSession] = useState<StoredSession | null>(null);
@@ -401,6 +435,10 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
     remoteSession?.result ??
     (resultScore ? getLifeTestResult(resultScore.resultCode) : null);
   const resultMetrics = resultScore ? buildResultMetrics(resultScore) : [];
+  const resultEvidenceItems = buildResultEvidenceItems(
+    resultSession?.answers ?? answers,
+    result?.evidenceFallbacks ?? [],
+  );
   const hiddenTag = resultScore?.hiddenTag ?? null;
   const matchmakerSuppressed = isLifeTestMatchmakerSuppressed(
     resultSession?.answers ?? answers,
@@ -696,7 +734,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
           </header>
 
           <div className="mt-4 grid grid-cols-4 gap-2">
-            {["班味", "恋爱脑", "社交", "江边"].map((label, index) => (
+            {progressLabels.map((label, index) => (
               <div key={label} className="min-w-0 text-[10px] font-bold text-[#A2BBB4]">
                 <span>{label}</span>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/8">
@@ -727,7 +765,12 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
             <section className="mt-5 flex flex-1 flex-col gap-4">
               <article className="relative overflow-hidden rounded-[8px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03)),rgba(13,31,30,0.86)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
                 <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap gap-1.5 opacity-35">
-                  {["先吃饭", "少点临时安排", "消息太多", "今天不解释"].map((item) => (
+                  {(currentQuestion.tags?.slice(0, 4) ?? [
+                    "今天状态",
+                    "少点消耗",
+                    "说清楚",
+                    "慢慢来",
+                  ]).map((item) => (
                     <span
                       key={item}
                       className="rounded-[8px] border border-white/12 bg-white/5 px-2 py-1 text-[10px] text-white/85"
@@ -908,6 +951,25 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
                   </div>
                 ))}
               </section>
+
+              {resultEvidenceItems.length > 0 && (
+                <section className="mt-5 rounded-[8px] bg-white p-4">
+                  <div className="flex items-center gap-2 text-[#0F766E]">
+                    <Sparkles size={18} />
+                    <h2 className="text-sm font-black">你刚才的选择暴露了什么</h2>
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    {resultEvidenceItems.map((item) => (
+                      <div key={item.id} className="border-t border-[#E7EFEA] pt-3 first:border-t-0 first:pt-0">
+                        <p className="text-xs font-black text-[#B7791F]">{item.tag}</p>
+                        <p className="mt-1 text-sm font-bold leading-6 text-[#4D5F58]">
+                          {item.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <section className="mt-5 grid gap-3">
                 <AdviceBlock

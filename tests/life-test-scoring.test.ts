@@ -64,7 +64,7 @@ describe("life test scoring", () => {
     expect(Object.keys(lifeTestResults).sort()).toEqual(codes.sort());
   });
 
-  it("defines the v3 69-question bank and serves 13 adaptive questions", () => {
+  it("defines the v4 69-question bank and serves 13 adaptive questions", () => {
     expect(lifeTestQuestionBank.length).toBe(69);
     expect(lifeTestQuestions).toHaveLength(lifeTestQuestionCount);
 
@@ -73,20 +73,34 @@ describe("life test scoring", () => {
       expect(question.sceneType).toBe(question.branch);
       expect(question.evidenceKey).toBeTruthy();
       expect(question.feedback).toBeTruthy();
+      expect(question.tags?.length).toBeGreaterThanOrEqual(1);
       expect(question.options).toHaveLength(4);
       expect(question.options.at(-1)?.isEscape).toBe(true);
 
       for (const option of question.options) {
-        expect(option.evidenceText).toContain(option.text);
+        expect(option.evidenceText).toBeTruthy();
+        expect(option.evidenceText).not.toContain("你在“");
       }
     }
 
     expect(lifeTestQuestionBank.filter((question) => question.eventKey === question.id))
       .toEqual([]);
     expect(lifeTestQuestionBank.find((question) => question.id === "work-01")?.eventKey)
-      .toBe("boss_simple_chat");
+      .toBe("urgent_task_blame");
     expect(lifeTestQuestionBank.find((question) => question.id === "final-04")?.evidenceKey)
-      .toBe("final:today_relief_button");
+      .toBe("final:message_to_self");
+    const firstQuestion = lifeTestQuestionBank.find((question) => question.id === "core-01");
+    expect(firstQuestion).toMatchObject({
+      eventKey: "after_hours_change",
+      evidenceKey: "core:after_hours_change",
+      tags: ["下班边界", "临时改动", "先说清楚", "今晚状态"],
+      title: "刚下班进电梯，工作群又弹出一句“这个能不能今晚顺手改下？”你手已经摸到家门钥匙了，你会：",
+      feedback: "这题不是测你懒不懒，是看你怎么守住下班后的边界。",
+    });
+    expect(firstQuestion?.options[0]).toMatchObject({
+      text: "先问清楚改哪三处、今晚要不要交，不接糊涂活。",
+      evidenceText: "你不是不愿意帮忙，是不想把模糊要求变成自己的锅。",
+    });
   });
 
   it("does not repeat semantic events inside a generated question flow", () => {
@@ -105,63 +119,24 @@ describe("life test scoring", () => {
     }
   });
 
-  it("keeps the full question bank and result copy in the v2 plain-spoken style", () => {
+  it("keeps the full question bank and result copy away from banned old-topic fragments", () => {
     const blockedFragments = [
-      "系统提示",
+      "对红心",
+      "不做人设",
+      "人生哲无更新",
+      "没平仄",
       "系统",
-      "朋友们",
       "人生",
       "人设",
-      "定义",
-      "没平仄",
-      "恢复出厂",
-      "开小会",
-      "小剧场",
-      "OS",
-      "上线",
-      "加载",
-      "说明书",
-      "压力锅",
-      "逃生路线",
-      "静音模式",
-      "脑内",
-      "命运",
       "灵魂",
       "回血",
-      "本体",
-      "待办",
-      "皮肤",
-      "营业",
-      "雷达",
-      "警报",
-      "样本研究",
-      "云端文件",
-      "城市级散热",
-      "人类体验卡",
-      "低速格式化",
-      "方向正在摆龙门阵",
-      "凑合精确",
-      "精神地图",
-      "隐藏题库",
-      "检测值",
-      "需求自由繁殖",
-      "情绪有个碳水",
-      "画进锅里",
-      "五粮液味",
-      "社交任务",
-      "国家大事",
-      "是否做人",
-      "隐身模式",
-      "人类连接",
-      "反向协商",
-      "防空洞",
-      "反向开朗",
-      "灰度发布",
-      "PDF",
-      "CPU",
       "自动",
       "爪子",
+      "哲学",
       "重启",
+      "命运",
+      "恋爱脑",
+      "班味",
     ];
     const questionVisibleCopy = lifeTestQuestionBank.flatMap((question) => [
       `${question.id}:title:${question.title}`,
@@ -277,15 +252,15 @@ describe("life test scoring", () => {
     }
   });
 
-  it("uses the clearer v3 copy for the core launch questions", () => {
+  it("uses the v4 copy for the core launch questions", () => {
     const coreQuestions = buildLifeTestQuestionFlow().slice(0, 5);
 
     expect(coreQuestions.map((question) => question.title)).toEqual([
-      "刚到家，工作群弹出一句“方便改一下吗？”你一般会怎么回？",
-      "你刷到一个宜宾本地岗位，工资看起还行，但要求写了很多。",
-      "红娘问你“想找什么样的人”，你最先想到的是：",
-      "饭局上大家开始轮流讲近况，马上轮到你。",
-      "周末终于空一天，你最想怎么过？",
+      "刚下班进电梯，工作群又弹出一句“这个能不能今晚顺手改下？”你手已经摸到家门钥匙了，你会：",
+      "刷到一个宜宾本地岗位，工资看起还行，地点也不远，但要求写了一长串。你第一反应是：",
+      "红娘问你“想找什么样的人”，你脑壳里最先冒出来的是：",
+      "周末你刚躺下，朋友突然喊你出去吃饭摆两句，你会：",
+      "路上遇到熟人，对方笑起问“最近咋样嘛？”你最可能：",
     ]);
     expect(coreQuestions.flatMap((question) => question.options.map((option) => option.text)))
       .not.toContain("没平仄，看今天班味浓不浓。");
@@ -295,16 +270,16 @@ describe("life test scoring", () => {
 
   it("switches the later question branch from early answers", () => {
     const coreQuestions = buildLifeTestQuestionFlow().slice(0, 5);
-    const jobAnswers = coreQuestions.map((question) => ({
+    const workAnswers = coreQuestions.map((question) => ({
       questionId: question.id,
-      optionId: "c",
+      optionId: "a",
     }));
     const escapeAnswers = coreQuestions.map((question) => ({
       questionId: question.id,
       optionId: "d",
     }));
 
-    expect(buildLifeTestQuestionFlow(jobAnswers)[5].branch).toBe("job");
+    expect(buildLifeTestQuestionFlow(workAnswers)[5].branch).toBe("work");
     expect(buildLifeTestQuestionFlow(escapeAnswers)[5].branch).toBe("antiRoutine");
     expect(getLifeTestEscapeState(escapeAnswers).hiddenPrompt).toBe(true);
   });
@@ -321,6 +296,8 @@ describe("life test scoring", () => {
 
     expect(isLifeTestMatchmakerSuppressed(answers)).toBe(true);
     expect(laterBranches).not.toContain("love");
+    expect(isLifeTestMatchmakerSuppressed([{ questionId: "love-04", optionId: "d" }]))
+      .toBe(true);
   });
 
   it("scores the adaptive 13-question flow deterministically", () => {

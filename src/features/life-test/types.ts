@@ -58,6 +58,7 @@ export type LifeTestQuestionOption = {
   scores: Partial<LifeTestScores>;
   branchScores?: Partial<Record<LifeTestBranchScoreKey, number>>;
   isEscape?: boolean;
+  suppressesMatchmaker?: boolean;
 };
 
 export type LifeTestQuestion = {
