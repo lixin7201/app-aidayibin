@@ -14,6 +14,10 @@ import type {
   LifeTestScoreResult,
   LifeTestSessionPayload,
 } from "@/features/life-test/types";
+import {
+  decodeSignedCookie,
+  encodeSignedCookie,
+} from "@/lib/auth/signed-cookie";
 import { prisma } from "@/lib/db/prisma";
 import { AppError, errorCodes } from "@/lib/http/errors";
 
@@ -26,6 +30,11 @@ type SessionCreateInput = {
   user: SessionUser | null;
   anonymousId?: string | null;
 } & LifeTestAttributionInput & RequestMeta;
+
+type LifeTestWriteToken = {
+  purpose: "life-test-write";
+  sessionId: string;
+};
 
 function toJson(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -89,6 +98,48 @@ function toSessionPayload(session: {
     createdAt: session.created_at.toISOString(),
     completedAt: session.completed_at?.toISOString() ?? null,
     repeatHigh: session.repeat_high,
+  };
+}
+
+export function createLifeTestWriteToken(sessionId: string) {
+  return encodeSignedCookie<LifeTestWriteToken>({
+    purpose: "life-test-write",
+    sessionId,
+  });
+}
+
+export function canWriteLifeTestSession(
+  session: { id: string; user_id: string | null },
+  user: SessionUser | null,
+  writeToken?: string | null,
+) {
+  if (user?.identityVerified && session.user_id === user.id) {
+    return true;
+  }
+
+  const token = decodeSignedCookie<LifeTestWriteToken>(writeToken ?? undefined);
+  return token?.purpose === "life-test-write" && token.sessionId === session.id;
+}
+
+function assertCanWriteLifeTestSession(
+  session: { id: string; user_id: string | null },
+  user: SessionUser | null,
+  writeToken?: string | null,
+) {
+  if (!canWriteLifeTestSession(session, user, writeToken)) {
+    throw new AppError(errorCodes.UNAUTHORIZED, "无权修改该测试记录", 403);
+  }
+}
+
+export function toPublicSessionPayload(
+  session: ReturnType<typeof toSessionPayload>,
+) {
+  return {
+    id: session.id,
+    nickname: session.nickname,
+    avatarUrl: session.avatarUrl,
+    status: session.status,
+    result: session.result,
   };
 }
 
@@ -211,10 +262,16 @@ export async function createLifeTestSession(input: SessionCreateInput) {
     referrerSessionId,
   });
 
-  return toSessionPayload(session);
+  return {
+    ...toSessionPayload(session),
+    writeToken: createLifeTestWriteToken(session.id),
+  };
 }
 
-export async function getLifeTestSession(sessionId: string) {
+export async function getLifeTestSession(
+  sessionId: string,
+  access?: { user: SessionUser | null; writeToken?: string | null },
+) {
   const session = await prisma.lifeTestSession.findUnique({
     where: { id: sessionId },
     include: {
@@ -228,22 +285,29 @@ export async function getLifeTestSession(sessionId: string) {
     throw new AppError(errorCodes.UNKNOWN_ERROR, "测试记录不存在", 404);
   }
 
-  return toSessionPayload(session);
+  const payload = toSessionPayload(session);
+
+  return canWriteLifeTestSession(session, access?.user ?? null, access?.writeToken)
+    ? payload
+    : toPublicSessionPayload(payload);
 }
 
 export async function saveLifeTestAnswer(input: {
   sessionId: string;
   answer: LifeTestAnswer;
   user: SessionUser | null;
+  writeToken?: string | null;
 }) {
   const session = await prisma.lifeTestSession.findUnique({
     where: { id: input.sessionId },
-    select: { answers_json: true },
+    select: { id: true, user_id: true, answers_json: true },
   });
 
   if (!session) {
     throw new AppError(errorCodes.UNKNOWN_ERROR, "测试记录不存在", 404);
   }
+
+  assertCanWriteLifeTestSession(session, input.user, input.writeToken);
 
   const answers = parseJsonArray<LifeTestAnswer>(session.answers_json).filter(
     (answer) => answer.questionId !== input.answer.questionId,
@@ -260,6 +324,7 @@ export async function saveLifeTestAnswer(input: {
     sessionId: input.sessionId,
     eventName: "answer",
     eventData: input.answer,
+    writeToken: input.writeToken,
   });
 
   return { answers };
@@ -269,7 +334,19 @@ export async function completeLifeTestSession(input: {
   sessionId: string;
   answers: LifeTestAnswer[];
   user: SessionUser | null;
+  writeToken?: string | null;
 }) {
+  const existingSession = await prisma.lifeTestSession.findUnique({
+    where: { id: input.sessionId },
+    select: { id: true, user_id: true },
+  });
+
+  if (!existingSession) {
+    throw new AppError(errorCodes.UNKNOWN_ERROR, "测试记录不存在", 404);
+  }
+
+  assertCanWriteLifeTestSession(existingSession, input.user, input.writeToken);
+
   let score: LifeTestScoreResult;
 
   try {
@@ -299,6 +376,7 @@ export async function completeLifeTestSession(input: {
     sessionId: input.sessionId,
     eventName: "complete",
     eventData: { resultCode: score.resultCode },
+    writeToken: input.writeToken,
   });
 
   return toSessionPayload(session);
@@ -309,6 +387,7 @@ export async function recordLifeTestEvent(input: {
   sessionId?: string | null;
   eventName: string;
   eventData?: unknown;
+  writeToken?: string | null;
 } & LifeTestAttributionInput) {
   const attribution = normalizeLifeTestAttribution(input);
   const event = await prisma.lifeTestEvent.create({
@@ -330,23 +409,45 @@ export async function recordLifeTestEvent(input: {
     },
   });
 
-  if (input.sessionId && input.eventName === "share") {
+  const counterEvent =
+    input.eventName === "share" ||
+    input.eventName === "job_cta_click" ||
+    input.eventName === "matchmaker_cta_click";
+  const counterSession = input.sessionId && counterEvent
+    ? await prisma.lifeTestSession.findUnique({
+        where: { id: input.sessionId },
+        select: { id: true, user_id: true },
+      })
+    : null;
+  const canUpdateCounters = counterSession
+    ? canWriteLifeTestSession(counterSession, input.user, input.writeToken)
+    : false;
+
+  if (counterSession && canUpdateCounters && input.eventName === "share") {
     await prisma.lifeTestSession.update({
-      where: { id: input.sessionId },
+      where: { id: counterSession.id },
       data: { share_count: { increment: 1 } },
     });
   }
 
-  if (input.sessionId && input.eventName === "job_cta_click") {
+  if (
+    counterSession &&
+    canUpdateCounters &&
+    input.eventName === "job_cta_click"
+  ) {
     await prisma.lifeTestSession.update({
-      where: { id: input.sessionId },
+      where: { id: counterSession.id },
       data: { job_cta_clicks: { increment: 1 } },
     });
   }
 
-  if (input.sessionId && input.eventName === "matchmaker_cta_click") {
+  if (
+    counterSession &&
+    canUpdateCounters &&
+    input.eventName === "matchmaker_cta_click"
+  ) {
     await prisma.lifeTestSession.update({
-      where: { id: input.sessionId },
+      where: { id: counterSession.id },
       data: { match_cta_clicks: { increment: 1 } },
     });
   }

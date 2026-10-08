@@ -82,6 +82,7 @@ type StoredSession = {
   score: LifeTestScoreResult | null;
   resultCode: string | null;
   completedAt: string | null;
+  writeToken: string | null;
 };
 
 type LeadType = "job" | "matchmaker" | "both";
@@ -443,6 +444,9 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
     if (!isLocalSession(sessionId)) {
       fetch(apiPath(`/life-test/sessions/${sessionId}`), {
         credentials: "include",
+        headers: stored?.writeToken
+          ? { "x-life-test-write-token": stored.writeToken }
+          : undefined,
       })
         .then((response) => (response.ok ? response.json() : null))
         .then((payload: { session?: LifeTestSessionPayload } | null) => {
@@ -519,6 +523,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       score: null,
       resultCode: null,
       completedAt: null,
+      writeToken: null,
     };
 
     try {
@@ -540,6 +545,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
         regionCode: payload.session.regionCode,
         shareCode: payload.session.shareCode,
         referrerSessionId: payload.session.referrerSessionId,
+        writeToken: payload.session.writeToken ?? null,
       };
     } catch {
       setNotice("本地先继续测试，数据记录稍后再补上。");
@@ -582,6 +588,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       void postJson(apiPath(`/life-test/sessions/${activeSession.id}/answer`), {
         questionId,
         optionId,
+        writeToken: activeSession.writeToken,
       }).catch(() => undefined);
     }
   }
@@ -631,6 +638,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       if (!isLocalSession(activeSession.id)) {
         await postJson(apiPath(`/life-test/sessions/${activeSession.id}/complete`), {
           answers,
+          writeToken: activeSession.writeToken,
         }).catch(() => undefined);
       }
 
@@ -663,6 +671,7 @@ export function LifeTestApp({ mode, sessionId, currentUser }: Props) {
       sessionId: currentSessionId,
       eventName,
       eventData,
+      writeToken: activeSession?.writeToken,
       ...attribution,
     }, options).catch(() => undefined);
   }

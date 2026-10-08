@@ -4,12 +4,10 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import sharp from "sharp";
+import sharp from "@/lib/image/sharp";
 
 import { config, isMockEnabled } from "@/lib/config";
 import { AppError, errorCodes } from "@/lib/http/errors";
-import { apiPath } from "@/lib/routes";
 
 let r2Client: S3Client | null = null;
 
@@ -36,51 +34,17 @@ function getR2Client() {
   return r2Client;
 }
 
-export async function createUploadUrl(input: {
-  userId: string;
-  fileName: string;
-  contentType: string;
-}) {
-  const extension = input.fileName.split(".").pop()?.toLowerCase() ?? "jpg";
-  const objectKey = `temp/${input.userId}/${crypto.randomUUID()}.${extension}`;
-
-  if (isMockEnabled && !getR2Client()) {
-    return {
-      uploadUrl: apiPath("/uploads/mock"),
-      fileUrl: `${config.NEXT_PUBLIC_APP_URL}/api/mock-image/uploaded-reference`,
-      objectKey,
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    };
-  }
-
-  const client = getR2Client();
-
-  if (!client || !config.CLOUDFLARE_R2_BUCKET) {
-    throw new AppError(errorCodes.STORAGE_ERROR, "图片存储未配置", 500);
-  }
-
-  const command = new PutObjectCommand({
-    Bucket: config.CLOUDFLARE_R2_BUCKET,
-    Key: objectKey,
-    ContentType: input.contentType,
-  });
-  const uploadUrl = await getSignedUrl(client, command, { expiresIn: 600 });
-
-  return {
-    uploadUrl,
-    fileUrl: buildPublicUrl(objectKey),
-    objectKey,
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-  };
-}
-
 export async function uploadUserInputImage(input: {
   userId: string;
   fileName: string;
   contentType: string;
   file: Buffer;
 }) {
-  const extension = input.fileName.split(".").pop()?.toLowerCase() ?? "jpg";
+  const extension = input.contentType === "image/png"
+    ? "png"
+    : input.contentType === "image/webp"
+      ? "webp"
+      : "jpg";
   const objectKey = `temp/${input.userId}/${crypto.randomUUID()}.${extension}`;
 
   if (isMockEnabled && !getR2Client()) {

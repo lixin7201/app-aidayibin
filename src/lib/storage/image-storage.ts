@@ -1,5 +1,5 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 
 import { config } from "@/lib/config";
 import { AppError, errorCodes } from "@/lib/http/errors";
@@ -55,7 +55,11 @@ export async function uploadUserInputImage(input: {
     return uploadR2UserInputImage(input);
   }
 
-  const extension = input.fileName.split(".").pop()?.toLowerCase() ?? "jpg";
+  const extension = input.contentType === "image/png"
+    ? "png"
+    : input.contentType === "image/webp"
+      ? "webp"
+      : "jpg";
   const objectKey = `temp/${input.userId}/${crypto.randomUUID()}.${extension}`;
 
   await putProviderObject(provider, {
@@ -194,10 +198,14 @@ export async function deleteImageObject(input: {
 export async function deleteImageUrlObject(input: {
   provider?: string | null;
   url?: string | null;
+  objectKeyPrefix?: string;
 }) {
   const object = getObjectReferenceFromPublicUrl(input.url);
 
-  if (!object) {
+  if (
+    !object ||
+    (input.objectKeyPrefix && !object.objectKey.startsWith(input.objectKeyPrefix))
+  ) {
     return;
   }
 
@@ -240,6 +248,7 @@ export async function deleteTaskImages(input: {
           .map((url) =>
             deleteImageUrlObject({
               url,
+              objectKeyPrefix: `temp/${input.userId}/`,
             }),
           )
       : []),
@@ -324,18 +333,25 @@ function getObjectReferenceFromPublicUrl(url: string | null | undefined) {
         continue;
       }
 
+      const objectKey = decodeURIComponent(
+        parsed.pathname.slice(basePath.length).replace(/^\//, ""),
+      );
+
+      if (
+        !objectKey ||
+        objectKey.includes("\\") ||
+        posix.normalize(objectKey) !== objectKey
+      ) {
+        return null;
+      }
+
       return {
         provider: publicBaseUrl.provider,
-        objectKey: decodeURIComponent(
-          parsed.pathname.slice(basePath.length).replace(/^\//, ""),
-        ),
+        objectKey,
       };
     }
 
-    return {
-      provider: undefined,
-      objectKey: decodeURIComponent(parsed.pathname.replace(/^\//, "")),
-    };
+    return null;
   } catch {
     return null;
   }

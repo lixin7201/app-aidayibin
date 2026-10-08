@@ -9,20 +9,22 @@ import { assertRateLimit } from "@/lib/security/rate-limit";
 import { appPath } from "@/lib/routes";
 
 const exchangeSchema = z.object({
-  app_token: z.string().optional(),
-  device_id: z.string().optional(),
-  app_user_id: z.string().optional(),
-  uid: z.union([z.string(), z.number()]).optional(),
-  nickname: z.string().optional(),
-  username: z.string().optional(),
-  avatar_url: z.string().optional(),
-  face: z.string().optional(),
-  deviceid: z.string().optional(),
-});
+  app_token: z.string().min(1).max(4096).optional(),
+  device_id: z.string().max(191).optional(),
+  app_user_id: z.string().max(191).optional(),
+  uid: z.union([z.string().max(191), z.number()]).optional(),
+  nickname: z.string().max(191).optional(),
+  username: z.string().max(191).optional(),
+  avatar_url: z.string().url().max(2048).optional(),
+  face: z.string().url().max(2048).optional(),
+  deviceid: z.string().max(191).optional(),
+}).strict();
 
 export async function POST(request: NextRequest) {
   try {
-    const body = exchangeSchema.parse(await parseJsonBody(request));
+    const body = exchangeSchema.parse(
+      await parseJsonBody(request, { maxBytes: 16 * 1024 }),
+    );
     const clientIp = getClientIp(request);
 
     await assertRateLimit(`auth_exchange:ip:${clientIp}`, {

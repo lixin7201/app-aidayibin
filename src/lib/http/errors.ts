@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 export const errorCodes = {
+  INVALID_REQUEST: "INVALID_REQUEST",
   UNAUTHORIZED: "UNAUTHORIZED",
   TEMPLATE_NOT_FOUND: "TEMPLATE_NOT_FOUND",
   TEMPLATE_DISABLED: "TEMPLATE_DISABLED",

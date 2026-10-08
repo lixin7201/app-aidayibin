@@ -17,6 +17,9 @@ type AppIdentityPayload = {
 };
 
 type QFH5UserInfo = {
+  app_token?: string;
+  token?: string;
+  wap_token?: string;
   uid?: string | number;
   username?: string;
   face?: string;
@@ -35,6 +38,9 @@ type QFH5Bridge = {
       data: { deviceid?: string; error?: string },
     ) => void,
   ) => void;
+  jumpLogin?: (
+    callback: (state: number | string, data?: unknown) => void,
+  ) => void;
 };
 
 type WindowWithQFH5 = Window & {
@@ -47,6 +53,7 @@ const qfh5BridgeWaitTimeoutMs = 3000;
 const qfh5BridgePollIntervalMs = 150;
 const qfh5CallbackTimeoutMs = 5000;
 const maxNoIdentityRetries = 6;
+const maxAppTokenLength = 4096;
 
 function isWechatBrowser() {
   return /MicroMessenger/i.test(navigator.userAgent);
@@ -54,6 +61,52 @@ function isWechatBrowser() {
 
 function isBridgeSuccess(state: number | string) {
   return String(state) === "1";
+}
+
+export function readAppTokenFromBrowserSources(input: {
+  cookie: string;
+  storage: Pick<Storage, "getItem"> | null;
+}) {
+  const rawWapToken = input.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("wap_token="))
+    ?.slice("wap_token=".length)
+    .trim();
+  let wapToken = rawWapToken;
+
+  if (rawWapToken) {
+    try {
+      wapToken = decodeURIComponent(rawWapToken);
+    } catch {
+      wapToken = rawWapToken;
+    }
+  }
+
+  let storedToken: string | null = null;
+
+  try {
+    storedToken = input.storage?.getItem("classify:token")?.trim() ?? null;
+  } catch {
+    storedToken = null;
+  }
+
+  const token = wapToken || storedToken;
+  return token && token.length <= maxAppTokenLength ? token : null;
+}
+
+export function mergeBrowserIdentityWithQfh5Profile(
+  browserIdentity: AppIdentityPayload | null,
+  qfh5Identity: AppIdentityPayload | null,
+) {
+  if (!browserIdentity) {
+    return qfh5Identity;
+  }
+
+  return {
+    ...(qfh5Identity ?? {}),
+    app_token: browserIdentity.app_token,
+  } satisfies AppIdentityPayload;
 }
 
 export function AppTokenLogin() {
@@ -78,6 +131,10 @@ export function AppTokenLogin() {
     }
 
     function readIdentityFromUrl() {
+      if (process.env.NODE_ENV === "production") {
+        return null;
+      }
+
       const payload: AppIdentityPayload = {
         app_token: url.searchParams.get("app_token") ?? undefined,
         app_user_id: url.searchParams.get("app_user_id") ?? undefined,
@@ -95,7 +152,16 @@ export function AppTokenLogin() {
         : null;
     }
 
-    function readMockIdentity() {
+    function readIdentityFromBrowser() {
+      const appToken = readAppTokenFromBrowserSources({
+        cookie: document.cookie,
+        storage: window.localStorage,
+      });
+
+      return appToken ? { app_token: appToken } satisfies AppIdentityPayload : null;
+    }
+
+    function readMockIdentity(): AppIdentityPayload | null {
       if (url.searchParams.get("mock_qfh5") !== "1") {
         return null;
       }
@@ -118,6 +184,7 @@ export function AppTokenLogin() {
       windowWithQFH5.QFH5 = {
         getUserInfo(callback) {
           callback(1, {
+            app_token: payload.app_token,
             uid: payload.uid,
             username: payload.username,
             face: payload.face,
@@ -224,6 +291,7 @@ export function AppTokenLogin() {
               }
 
               const nextPayload: AppIdentityPayload = {
+                app_token: data.app_token ?? data.wap_token ?? data.token,
                 uid: data.uid,
                 username: data.username,
                 face: data.face,
@@ -292,6 +360,7 @@ export function AppTokenLogin() {
       lastRefreshAt = now;
       isExchanging = true;
       const identityFromUrl = readIdentityFromUrl();
+      const identityFromBrowser = readIdentityFromBrowser();
       const mockIdentity = readMockIdentity();
       installMockQFH5Bridge(mockIdentity);
 
@@ -301,7 +370,18 @@ export function AppTokenLogin() {
       }
 
       try {
-        const identity = identityFromUrl ?? (await readIdentityFromQFH5());
+        const qfh5Identity =
+          !identityFromUrl && !mockIdentity
+            ? await readIdentityFromQFH5()
+            : null;
+        const identity =
+          identityFromUrl ??
+          mergeBrowserIdentityWithQfh5Profile(
+            identityFromBrowser,
+            qfh5Identity,
+          ) ??
+          mockIdentity ??
+          qfh5Identity;
 
         if (!identity) {
           // 无 App 身份时，检测微信环境并自动跳转 OAuth
@@ -318,6 +398,18 @@ export function AppTokenLogin() {
             return;
           }
 
+          scheduleNoIdentityRetry();
+          return;
+        }
+
+        if (!identity.app_token && !mockIdentity) {
+          if (nextDebugEnabled) {
+            setDebugMessage("App 仅返回 UID，未提供可校验登录 Token");
+          }
+
+          windowWithQFH5.QFH5?.jumpLogin?.(() => {
+            scheduleNoIdentityRetry();
+          });
           scheduleNoIdentityRetry();
           return;
         }

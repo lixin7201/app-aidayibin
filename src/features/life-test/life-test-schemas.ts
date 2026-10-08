@@ -1,10 +1,20 @@
 import { z } from "zod";
 
 const nullableString = (max: number) => z.string().max(max).nullish();
+const eventDataSchema = z
+  .record(
+    z.string().max(64),
+    z.union([z.string().max(500), z.number().finite(), z.boolean(), z.null()]),
+  )
+  .refine((value) => Object.keys(value).length <= 20, "事件字段过多");
 
 export const lifeTestAnswerSchema = z.object({
   questionId: z.string().min(1),
   optionId: z.string().min(1),
+});
+
+export const saveLifeTestAnswerSchema = lifeTestAnswerSchema.extend({
+  writeToken: z.string().max(2048).optional(),
 });
 
 const lifeTestAttributionSchema = z.object({
@@ -25,6 +35,7 @@ export const createLifeTestSessionSchema = lifeTestAttributionSchema.extend({
 
 export const completeLifeTestSessionSchema = z.object({
   answers: z.array(lifeTestAnswerSchema),
+  writeToken: z.string().max(2048).optional(),
 });
 
 export const lifeTestEventSchema = z.object({
@@ -42,7 +53,8 @@ export const lifeTestEventSchema = z.object({
       "matchmaker_cta_click",
       "lead_submit",
     ]),
-  eventData: z.record(z.string(), z.unknown()).optional(),
+  eventData: eventDataSchema.optional(),
+  writeToken: z.string().max(2048).optional(),
 }).merge(lifeTestAttributionSchema);
 
 export const createLifeTestLeadSchema = z.object({

@@ -129,4 +129,5 @@ export type LifeTestSessionPayload = {
   createdAt: string;
   completedAt: string | null;
   repeatHigh: boolean;
+  writeToken?: string;
 };

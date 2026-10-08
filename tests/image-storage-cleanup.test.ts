@@ -80,4 +80,24 @@ describe("image storage cleanup", () => {
       "temp/user-1/input.jpg",
     );
   });
+
+  it("never deletes external URLs or another user's temp objects", async () => {
+    await deleteTaskImages({
+      provider: "aliyun_oss",
+      userId: "user-1",
+      taskId: "task-1",
+      tempInputUrls: [
+        "https://evil.example/temp/user-1/input.jpg",
+        "https://img.dayibin.cn/temp/user-2/input.jpg",
+        "https://img.dayibin.cn/temp/user-1/%2F..%2Fuser-2/input.jpg",
+      ],
+    });
+
+    expect(mocks.deleteAliyunOssObject).not.toHaveBeenCalledWith(
+      "temp/user-1/input.jpg",
+    );
+    expect(mocks.deleteAliyunOssObject).not.toHaveBeenCalledWith(
+      "temp/user-2/input.jpg",
+    );
+  });
 });

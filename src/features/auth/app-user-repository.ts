@@ -20,12 +20,16 @@ export async function ensureSessionUser(
       },
       update: {
         nickname: user.nickname,
-        avatar_url: user.avatarUrl,
+        ...(user.avatarUrl ? { avatar_url: user.avatarUrl } : {}),
         last_seen_at: now,
       },
     });
 
-    return mapAppUserToSession(toAppUserRecord(data), user.deviceId);
+    return mapAppUserToSession(
+      toAppUserRecord(data),
+      user.deviceId,
+      user.identityVerified,
+    );
   } catch (error) {
     throw new AppError(
       errorCodes.UNKNOWN_ERROR,
@@ -38,6 +42,7 @@ export async function ensureSessionUser(
 function mapAppUserToSession(
   user: AppUserRecord,
   deviceId: string | null,
+  identityVerified?: boolean,
 ): SessionUser {
   return {
     id: user.id,
@@ -45,6 +50,7 @@ function mapAppUserToSession(
     nickname: user.nickname ?? "大宜宾用户",
     avatarUrl: user.avatar_url,
     deviceId,
+    identityVerified,
   };
 }
 

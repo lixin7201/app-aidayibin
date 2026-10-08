@@ -3,7 +3,8 @@ import path from "node:path";
 
 import { parse as parseOpenTypeFont, type OpenTypeFont } from "opentype.js";
 import QRCode from "qrcode";
-import sharp from "sharp";
+import type { OverlayOptions } from "sharp";
+import sharp from "@/lib/image/sharp";
 
 import { lifeTestCityConfig } from "@/features/life-test/config/city";
 import { getLifeTestPosterBasePath } from "@/features/life-test/life-test-poster-assets";
@@ -11,6 +12,7 @@ import type {
   LifeTestResultType,
   LifeTestScoreResult,
 } from "@/features/life-test/types";
+import { fetchRemoteImageBuffer } from "@/lib/security/remote-image";
 
 const posterWidth = 1024;
 const posterHeight = 1536;
@@ -261,18 +263,17 @@ async function renderPosterAvatarImage(input: {
 
   if (input.avatarUrl && /^https?:\/\//.test(input.avatarUrl)) {
     try {
-      const response = await fetch(input.avatarUrl);
-
-      if (response.ok) {
-        avatarSource = Buffer.from(await response.arrayBuffer());
-      }
+      avatarSource = await fetchRemoteImageBuffer(input.avatarUrl);
     } catch {
       avatarSource = null;
     }
   }
 
   const avatarBuffer = avatarSource
-    ? await sharp(avatarSource, { failOn: "none" })
+    ? await sharp(avatarSource, {
+        failOn: "error",
+        limitInputPixels: 16_000_000,
+      })
         .resize(innerSize, innerSize, { fit: "cover" })
         .png()
         .toBuffer()
@@ -551,7 +552,7 @@ export async function renderLifeTestPosterJpeg(input: {
     nickname,
   });
   const qr = await renderPosterQrImage(input.pageUrl);
-  const composites: sharp.OverlayOptions[] = [
+  const composites: OverlayOptions[] = [
     { input: overlay, left: 0, top: 0 },
     { input: avatar, left: 758, top: 74 },
   ];

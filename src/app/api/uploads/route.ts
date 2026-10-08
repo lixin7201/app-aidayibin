@@ -1,8 +1,7 @@
 import type { NextRequest } from "next/server";
-import sharp from "sharp";
-
 import { requireStoredSessionFromRequest } from "@/features/auth/session";
 import { apiError, apiOk, AppError, errorCodes } from "@/lib/http/errors";
+import sharp from "@/lib/image/sharp";
 import { assertRateLimit } from "@/lib/security/rate-limit";
 import { uploadUserInputImage } from "@/lib/storage/image-storage";
 
@@ -72,20 +71,37 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function normalizeUploadImage(file: File) {
+export async function normalizeUploadImage(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer());
+  const detectedContentType = detectImageContentType(buffer);
 
-  if (buffer.byteLength <= compressionThreshold && file.type === "image/jpeg") {
-    return {
-      file: buffer,
-      contentType: file.type,
-      fileName: file.name,
-    };
+  if (!detectedContentType || detectedContentType !== file.type) {
+    throw new AppError(
+      errorCodes.INVALID_IMAGE_FORMAT,
+      "图片内容与文件格式不一致",
+      400,
+    );
+  }
+
+  try {
+    const metadata = await sharp(buffer, {
+      failOn: "error",
+      limitInputPixels: 40_000_000,
+    }).metadata();
+
+    if (!metadata.width || !metadata.height) {
+      throw new Error("missing image dimensions");
+    }
+  } catch {
+    throw new AppError(errorCodes.INVALID_IMAGE_FORMAT, "图片文件无效", 400);
   }
 
   try {
     let quality = 88;
-    let output = await sharp(buffer, { failOn: "none" })
+    let output = await sharp(buffer, {
+      failOn: "error",
+      limitInputPixels: 40_000_000,
+    })
       .rotate()
       .resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true })
       .jpeg({ quality, mozjpeg: true })
@@ -93,7 +109,10 @@ async function normalizeUploadImage(file: File) {
 
     while (output.byteLength > compressionThreshold && quality > 72) {
       quality -= 6;
-      output = await sharp(buffer, { failOn: "none" })
+      output = await sharp(buffer, {
+        failOn: "error",
+        limitInputPixels: 40_000_000,
+      })
         .rotate()
         .resize({
           width: 1800,
@@ -111,12 +130,38 @@ async function normalizeUploadImage(file: File) {
       fileName: getUploadFileName(file.name),
     };
   } catch {
-    return {
-      file: buffer,
-      contentType: file.type,
-      fileName: file.name,
-    };
+    throw new AppError(errorCodes.INVALID_IMAGE_FORMAT, "图片处理失败", 400);
   }
+}
+
+function detectImageContentType(buffer: Buffer) {
+  if (
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+
+  if (
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+  ) {
+    return "image/png";
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+
+  return null;
 }
 
 function getUploadFileName(fileName: string) {

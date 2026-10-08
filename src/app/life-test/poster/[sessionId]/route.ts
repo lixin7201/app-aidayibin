@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         session.avatarUrl ??
         (currentUser?.nickname === session.nickname ? currentUser.avatarUrl : null),
       result: session.result,
-      score: session.score,
+      score: null,
       pageUrl,
     });
 

@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
     nickname: userData.nickname || "微信用户",
     avatarUrl: userData.headimgurl || null,
     deviceId: null,
+    identityVerified: true,
   });
 
   await setSessionCookie(user, request);

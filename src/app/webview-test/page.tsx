@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from "react";
 
+import { readAppTokenFromBrowserSources } from "@/features/auth/app-token-login";
 import { apiPath } from "@/lib/routes";
 
 type TestStatus = "checking" | "success" | "missing" | "failed" | "partial";
 
 type QFH5UserInfo = {
+  app_token?: string;
+  token?: string;
+  wap_token?: string;
   uid?: string | number;
   username?: string;
   face?: string;
@@ -145,9 +149,9 @@ export default function WebviewTestPage() {
       const userInfo = nextResults.find((item) => item.name === "getUserInfo");
       const userInfoData = extractBridgeData<QFH5UserInfo>(userInfo?.data);
 
-      if (userInfo?.status === "success" && userInfoData) {
-        await verifyServerSession(userInfoData);
-      }
+      const sessionVerified = userInfo?.status === "success" && userInfoData
+        ? await verifyServerSession(userInfoData)
+        : false;
 
       const requiredFailed = nextResults.some(
         (item) => item.required && item.status !== "success",
@@ -156,9 +160,13 @@ export default function WebviewTestPage() {
         (item) => !item.required && item.status !== "success",
       );
 
-      if (requiredFailed) {
+      if (requiredFailed || !sessionVerified) {
         setStatus(userInfo?.status === "missing" ? "missing" : "failed");
-        setMessage("用户信息桥接未通过，H5 无法建立 App 登录态。");
+        setMessage(
+          requiredFailed
+            ? "用户信息桥接未通过，H5 无法建立 App 登录态。"
+            : "桥接已返回，但缺少可由服务端校验的登录 Token。",
+        );
         return;
       }
 
@@ -172,13 +180,28 @@ export default function WebviewTestPage() {
 
     async function verifyServerSession(userInfo: QFH5UserInfo) {
       try {
+        const appToken =
+          userInfo.app_token ??
+          userInfo.wap_token ??
+          userInfo.token ??
+          readAppTokenFromBrowserSources({
+            cookie: document.cookie,
+            storage: window.localStorage,
+          });
+
+        if (!appToken) {
+          setSessionResult({
+            ok: false,
+            error: "未取得 app_token、wap_token 或现有登录 Token",
+          });
+          return false;
+        }
+
         const response = await fetch(apiPath("/auth/exchange"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            uid: userInfo.uid,
-            username: userInfo.username,
-            face: userInfo.face,
+            app_token: appToken,
             deviceid: userInfo.deviceid,
           }),
         });
@@ -188,11 +211,13 @@ export default function WebviewTestPage() {
           status: response.status,
           data,
         });
+        return response.ok;
       } catch (error) {
         setSessionResult({
           ok: false,
           error: error instanceof Error ? error.message : String(error),
         });
+        return false;
       }
     }
 
@@ -242,7 +267,7 @@ export default function WebviewTestPage() {
                   {item.message}
                 </p>
                 <pre className="mt-3 max-h-[180px] overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[var(--muted)]">
-                  {JSON.stringify(item.data ?? null, null, 2)}
+                  {JSON.stringify(redactTokens(item.data), null, 2)}
                 </pre>
               </div>
             ))}
@@ -257,7 +282,7 @@ export default function WebviewTestPage() {
 
           <div className="mt-5 rounded-2xl bg-[#fbfaff] p-4 text-sm leading-6 text-[var(--muted)]">
             <p className="font-black text-[var(--foreground)]">怎么看结果：</p>
-            <p className="mt-2">用户信息是必需项，通过后 H5 会自动建立登录态。</p>
+            <p className="mt-2">用户信息和可校验 Token 都是必需项，通过后 H5 才会建立登录态。</p>
             <p>定位、设备号、推送状态、系统信息是可选项，用于 App 侧联调排查。</p>
             <p>如果用户信息显示未检测到，说明页面不是在 App WebView 里打开，或 App 还没有注入 QFH5。</p>
           </div>
@@ -277,6 +302,7 @@ function installMockBridge() {
   window.QFH5 = {
     getUserInfo(callback) {
       callback(1, {
+        app_token: url.searchParams.get("mock_app_token") ?? undefined,
         uid: url.searchParams.get("mock_uid") ?? "987654",
         username: url.searchParams.get("mock_username") ?? "上线前测试用户",
         face:
@@ -319,6 +345,23 @@ function installMockBridge() {
       });
     },
   };
+}
+
+function redactTokens(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactTokens);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      key.toLowerCase().includes("token") ? "[已隐藏]" : redactTokens(item),
+    ]),
+  );
 }
 
 function wait(ms: number) {

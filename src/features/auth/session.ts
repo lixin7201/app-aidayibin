@@ -20,6 +20,7 @@ export type SessionUser = {
   nickname: string;
   avatarUrl: string | null;
   deviceId: string | null;
+  identityVerified?: boolean;
 };
 
 function shouldUseSecureCookie(request?: NextRequest) {
@@ -111,5 +112,6 @@ export function getMockSessionUser(): SessionUser {
     nickname: "大宜宾体验用户",
     avatarUrl: null,
     deviceId: "mock-device-001",
+    identityVerified: true,
   };
 }

@@ -36,7 +36,7 @@ export async function requireGaokaoAdminRequest(
   );
   const user = await requireStoredSessionFromRequest(request);
 
-  if (!isGaokaoAdminAppUserId(user.appUserId)) {
+  if (!user.identityVerified || !isGaokaoAdminAppUserId(user.appUserId)) {
     throw new AppError(errorCodes.UNAUTHORIZED, "无管理员权限", 403);
   }
 
